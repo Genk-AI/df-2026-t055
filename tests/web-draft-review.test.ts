@@ -20,7 +20,7 @@ export async function flush(){for(const fn of effects)fn();await new Promise(r=>
 const hookUrl = 'data:text/javascript;base64,' + Buffer.from(hookSource).toString('base64');
 const hooks = await import(hookUrl);
 let source = await readFile(new URL('../apps/web/src/main.tsx', import.meta.url), 'utf8');
-source = source.slice(source.indexOf('function Draft('), source.indexOf('\nfunction Support(')) + '\nexport ' + source.slice(source.indexOf('function Handover('), source.indexOf('\nfunction Learner('));
+source = source.slice(source.indexOf('function Draft('), source.indexOf('\nfunction Handover(')) + '\nexport ' + source.slice(source.indexOf('function Handover('), source.indexOf('\nfunction Learner('));
 source = `import React, {useState,useEffect,useRef} from ${JSON.stringify(hookUrl)};
 import {missingDraftChecks,draftPreviewMode,savedDraftReview} from ${JSON.stringify(new URL('../apps/web/src/draft-review.ts', import.meta.url).href)};
 import {isManualDraft,releaseCopySource,beginReleaseCopy} from ${JSON.stringify(new URL('../apps/web/src/release-copy.ts', import.meta.url).href)};

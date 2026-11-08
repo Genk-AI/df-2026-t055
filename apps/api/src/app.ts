@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { releaseCopyRequestSchema, releaseCopyResponseSchema, draftDetailSchema, editedStepSchema, eventSchema, approvalRequestSchema, releaseSchema, draftPatchSchema, sessionStartSchema, normalizeRelease, projectReleaseToSessionSteps, learnerSessionSchema, type Member } from '../../../packages/shared/src/index.ts';
 import { learnerProfileCreateRequestSchema, learnerProfileUpdateRequestSchema, learnerProfileDetailSchema, learnerProfileListResponseSchema, toLearnerProfileSummary } from '../../../packages/shared/src/learner-profile.ts';
-import { supportResumeRequestSchema, supportResumeResponseSchema, supportRecordSchema, supportRecordSaveRequestSchema, supportOperationRequestSchema, supportStartResponseSchema, supportAcknowledgeResponseSchema, supportClaimResponseSchema, supportRequestListResponseSchema, supportRequestStatusQuerySchema } from '../../../packages/shared/src/support.ts';
+import { supportResumeRequestSchema, supportResumeResponseSchema, supportRecordSchema, supportRecordSaveRequestSchema, supportOperationRequestSchema, supportStartResponseSchema, supportAcknowledgeResponseSchema, supportClaimResponseSchema, supportRequestListResponseSchema, supportRequestStatusQuerySchema, staffIdentitySchema, staffSupportSessionSchema } from '../../../packages/shared/src/support.ts';
 import { draftCorrectionSchema, correctionsListResponseSchema } from '../../../packages/shared/src/generation.ts';
 import { workGuideListResponseSchema, workGuideRecordsResponseSchema } from '../../../packages/shared/src/work-guides.ts';
 import { MemoryRepository, seed, doc, id, now, type Repository, type Storage, type Auth, type Doc } from './adapters.ts';
@@ -732,6 +732,22 @@ export function createApp(options: {
         });
         notifications.publish(member(res).orgId, req.params.id);
         send(res, { status: result.status, stepIndex: result.stepIndex, revision: result.revision });
+    });
+    api.get('/staff/me', async (_req, res) => {
+        staff(res);
+        res.json(staffIdentitySchema.parse({ schemaVersion: '1', uid: member(res).uid }));
+    });
+    api.get('/support-requests/:id/session-state', async (req, res) => {
+        staff(res);
+        const result = await db.transaction(async () => {
+            const q = await get('supportRequests', req.params.id, res);
+            if (q.kind !== 'help' || q.assignedTo !== member(res).uid) fail(403, 'NOT_ASSIGNED');
+            if (!['in_progress', 'acknowledged'].includes(q.status)) fail(409, 'INVALID_STATE');
+            const s = await get('sessions', q.sessionId, res);
+            if (s.learnerId !== q.learnerId) fail(409, 'INVALID_STATE');
+            return staffSupportSessionSchema.parse({ schemaVersion: '1', sessionId: s.id, status: s.status, revision: s.revision, currentRequest: s.activeSupportRequestId === q.id });
+        });
+        res.json(result);
     });
     api.get('/support-requests', async (req, res) => {
         staff(res);

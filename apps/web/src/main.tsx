@@ -5,10 +5,11 @@ import { isManualDraft, releaseCopySource, beginReleaseCopy, type ReleaseCopySta
 import { releaseCopyResponseSchema } from '../../../packages/shared/src/index.ts';
 import { missingDraftChecks, draftPreviewMode, savedDraftReview } from './draft-review.ts';
 import { StaffLearners } from './staff-learners.tsx';
+import { StaffSupport } from './staff-support.tsx';
 import { createTokenProvider } from './auth.ts';
 import { createFirebaseSession } from './firebase-session.ts';
 import { subscribeSupport } from './support-ws.ts';
-import { staffSupportNotificationSchema, learnerSupportNotificationSchema } from '../../../packages/shared/src/support.ts';
+import { learnerSupportNotificationSchema } from '../../../packages/shared/src/support.ts';
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { EditedStep, ReviewChecks, LearnerSessionDTO } from '../../../packages/shared/src/index.ts';
@@ -27,6 +28,8 @@ const getToken = createTokenProvider(() => account, authMode === 'demo' ? undefi
     if (!firebaseSession) throw Error('AUTH_UNAVAILABLE');
     return firebaseSession.token();
 });
+const subscribeStaffSupport = (receive: (value: unknown) => void, status: (connected: boolean) => void) => subscribeSupport(getToken, undefined, receive, status);
+
 async function api(path: string, method = 'GET', body?: unknown) {
     const r = await fetch(`/api/v1${path}`, { method, headers: { Authorization: `Bearer ${await getToken()}`, ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: body instanceof FormData ? body : JSON.stringify(body) }) });
     const data = await r.json();
@@ -151,7 +154,7 @@ function Staff({ path, action }: {
     if (draftMatch)
         return <Draft key={draftMatch[1]} id={draftMatch[1]} action={action}/>;
     if (path === '/staff/support')
-        return <Support action={action}/>;
+        return <StaffSupport api={api} go={go} subscribe={subscribeStaffSupport}/>;
     return <><nav><button onClick={() => go('/staff')}>作業一覧</button><button onClick={() => go('/staff/learners')}>本人一覧・登録</button><button onClick={() => go('/staff/tasks/new')}>＋ 手本を登録</button><button onClick={() => go('/staff/support')}>支援要求</button><button onClick={() => go('/staff/handover')}>承認版を確認・割当</button></nav>{path === '/staff/learners' || path.startsWith('/staff/learners/') ? <StaffLearners key={path} path={path} api={api} go={go}/> : path.startsWith('/staff/handover') ? <Handover path={path.replace('/staff', '')} action={action} staff/> : path === '/staff/tasks/new' ? <section><h1>手本動画を登録</h1><label>作業名<input value={title} onChange={e => setTitle(e.target.value)}/></label><label>MP4（音声付き・50MB / 180秒以内）<input type="file" accept="video/mp4" onChange={e => setFile(e.target.files?.[0] ?? null)}/></label><button disabled={!file || busy} onClick={() => void action(async () => {
                 setBusy(true);
                 try {
@@ -307,30 +310,6 @@ function Draft({ id, action }: {
                     if (e.shiftKey && e.target === first) { e.preventDefault(); last.focus(); }
                     else if (!e.shiftKey && e.target === last) { e.preventDefault(); first.focus(); }
                 } }}><p>職員認証内のプレビュー（未承認）</p><label>プレビューの表示方法<select autoFocus value={previewMode} onChange={e => setPreviewMode(e.target.value as typeof previewMode)}><option value="photo_only">写真のみ</option><option value="photo_text">写真＋短文</option></select></label><div aria-label="本人への提示内容"><p>工程 {preview + 1} / {steps.length}</p><Asset id={steps[preview].imageAssetId} alt={steps[preview].imageAltText || steps[preview].text}/>{previewMode === 'photo_text' && <><h2>{steps[preview].text}</h2><p>{steps[preview].visibleCaution}</p></>}</div><aside><h2>職員の確認用</h2><p>代替テキスト：{steps[preview].imageAltText || steps[preview].text}</p>{previewMode === 'photo_only' && <><p>写真のみでは短文・注意書きを表示しません。写真の順序を確認し、本人と一対一で手本を示して注意の伝わり方を確かめてください。</p><p>伝える注意：{steps[preview].visibleCaution || 'なし'}</p><p>声かけ・待つ位置：{steps[preview].coaching || '未記録'}</p><p>必要な伝え方を工程の「職員用声かけ・待つ位置」に記録してから提示内容を確認してください。音声だけに頼らず確認してください。</p></>}<p>音声ガイド：{audioGuidance ? '希望あり（承認時に生成。ここでは再生しません）' : '希望なし'}</p></aside><button onClick={closePreview}>閉じる</button></section></div>}</>;
-}
-function Support({ action }: {
-    action: Action;
-}) {
-    const [items, setItems] = useState<any[]>([]);
-    const loadSequence = useRef(0);
-    const load = async () => {
-        const sequence = ++loadSequence.current;
-        const data = await api('/support-requests');
-        if (sequence === loadSequence.current) setItems(data.requests);
-    };
-    useEffect(() => {
-        void action(load);
-        const t = setInterval(() => void action(load), 3000);
-        const unsubscribe = subscribeSupport(getToken, undefined, value => {
-            staffSupportNotificationSchema.parse(value);
-            void action(load);
-        });
-        return () => { clearInterval(t); unsubscribe(); };
-    }, []);
-    return <><button onClick={() => go('/staff')}>作業一覧</button><h1>支援要求</h1><p>3秒間隔で更新します。</p>{!items.length && <p>未対応の要求はありません。</p>}{items.map(q => <section key={q.requestId}><h2>{q.kind === 'stop' ? 'やめる' : '手伝って'}：{q.status === 'open' ? '対応待ち' : q.status === 'assigned' ? '担当決定済み' : '対応中'}</h2><p>{q.learnerId === 'a' ? 'Aさん' : q.learnerId === 'b' ? 'Bさん' : q.learnerId}：工程 {q.stepId}</p><button onClick={() => void action(async () => {
-                await api(`/support-requests/${q.requestId}/${q.kind === 'stop' ? 'acknowledge' : q.status === 'open' ? 'claim' : q.status === 'assigned' ? 'start' : 'acknowledge'}`, 'POST', {});
-                await load();
-            })}>{q.kind === 'stop' ? '確認した' : q.status === 'open' ? '担当する' : q.status === 'assigned' ? '対応開始' : '対応済み'}</button></section>)}</>;
 }
 function Handover({ path, action, staff = false }: {
     path: string;

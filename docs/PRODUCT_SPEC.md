@@ -222,6 +222,8 @@ Cloud Storageは`source/{orgId}/{taskId}/...`、`draft/{orgId}/{draftId}/...`、
 | `GET /me/sessions/{id}` | 本人 | 固定版の手順・表示方法・読み上げの設定とセッション状態。支援待ちでは `support:{requestId,status,revision}` も返す |
 | `POST /me/sessions/{id}/events` | 本人 | `{clientEventId,expectedRevision,type: next / back / help / resume / stop / complete}` → `{status,stepIndex,revision,support?}`。helpでは要求を作り、対象IDをセッションに保存する。resumeはその要求の対応完了後に限る |
 | `GET /support-requests` | 職員 | `open`・`assigned`・`in_progress` の要求一覧。記録の後入力では `?status=acknowledged` で対応完了した要求を取得できる |
+| `GET /staff/me` | 職員 | `{schemaVersion,uid}`。認証済み職員自身のIDを返し、担当操作の表示に使う。操作の認可はサーバーでも検査する |
+| `GET /support-requests/{id}/session-state` | 担当職員 | `{schemaVersion,sessionId,status,revision,currentRequest}`。対応中・完了済みのhelpについて担当者だけが取得し、再開要求の競合検査に使う。`currentRequest` はセッションの現在の支援要求と一致するかを表す。停止・別org・担当外を再開できる意味ではない |
 | `POST /support-requests/{id}/claim` | 職員 | `{}` → `{status:"assigned",assignedTo,assignedAt,revision}`。helpの担当を自分にする。別の職員が担当済みなら409 |
 | `POST /support-requests/{id}/start` | 担当職員 | `{}` → `{status,startedAt}`。対象はassignedのhelp。初回はin_progressにする |
 | `POST /support-requests/{id}/acknowledge` | 職員 | `{}` → `{status:"acknowledged",acknowledgedAt}`。helpは担当職員が対応完了を記録する。stopは同じ所属の職員が通知を確認する |
