@@ -4,7 +4,7 @@ import type { Repository } from './adapters.ts';
 
 export interface GenerationQueue { enqueue(jobId: string, now?: number): Promise<void> }
 type QueueConfig = { project: string; location: string; queue: string; target: string; audience: string; serviceAccount: string };
-type Transport = { request(options: { url: string; method: 'POST'; data: object }): Promise<unknown> };
+type Transport = { request(options: { url: string; method: 'GET' | 'POST'; data?: object }): Promise<{ data?: unknown }> };
 const bucketMs = 5 * 60_000;
 export class CloudTasksQueue implements GenerationQueue {
     private transport: Transport;
@@ -18,8 +18,19 @@ export class CloudTasksQueue implements GenerationQueue {
         this.parent = `projects/${config.project}/locations/${config.location}/queues/${config.queue}`;
         this.transport = transport ?? new GoogleAuth({ projectId: config.project, scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
     }
+    private async assertQueuePolicy() {
+        let value: unknown;
+        try { value = (await this.transport.request({ url: `https://cloudtasks.googleapis.com/v2/${this.parent}`, method: 'GET' })).data; }
+        catch { throw Error('TASK_QUEUE_INSPECTION_FAILED'); }
+        const queue = value as { rateLimits?: { maxConcurrentDispatches?: number }; retryConfig?: { maxAttempts?: number }; httpTarget?: unknown } | undefined;
+        if (!queue || queue.rateLimits?.maxConcurrentDispatches !== 1 || queue.retryConfig?.maxAttempts !== 3 ||
+            (queue.httpTarget != null && (typeof queue.httpTarget !== 'object' || Object.keys(queue.httpTarget).length > 0)))
+            throw Error('TASK_QUEUE_CONFIGURATION_INVALID');
+    }
     async enqueue(jobId: string, now = Date.now()) {
         if (!/^[A-Za-z0-9_-]+$/.test(jobId) || !Number.isFinite(now)) throw Error('INVALID_TASK_JOB');
+        // Queue-level routing and token overrides take precedence over task settings.
+        await this.assertQueuePolicy();
         // A new recovery window gets a new name; Cloud Tasks keeps old names after deletion.
         const taskId = createHash('sha256').update(`${jobId}:${Math.floor(now / bucketMs)}`).digest('hex');
         const task = {

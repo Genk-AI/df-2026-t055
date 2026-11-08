@@ -7,10 +7,11 @@ import { createWorker } from '../apps/generator/src/worker.ts';
 import { LocalStorage } from '../apps/api/src/adapters.ts';
 import { FakeModel } from '../apps/generator/src/model.ts';
 
+const validPolicy = { rateLimits: { maxConcurrentDispatches: 1 }, retryConfig: { maxAttempts: 3 } };
 const config = { project: 'project', location: 'asia-northeast1', queue: 'generation', target: 'https://generator.example/api/v1/internal/generate', audience: 'https://generator.example', serviceAccount: 'tasks@project.iam.gserviceaccount.com' };
 test('Cloud Tasks sends OIDC, deadline and bounded deterministic recovery names', async () => {
     const calls: any[] = [];
-    const queue = new CloudTasksQueue(config, { async request(input) { calls.push(input); return {}; } });
+    const queue = new CloudTasksQueue(config, { async request(input) { if (input.method === 'GET') return { data: validPolicy }; calls.push(input); return {}; } });
     await queue.enqueue('job-1', 1);
     await queue.enqueue('job-1', 2);
     await queue.enqueue('job-1', 300001);
@@ -21,11 +22,28 @@ test('Cloud Tasks sends OIDC, deadline and bounded deterministic recovery names'
     assert.deepEqual(JSON.parse(Buffer.from(task.httpRequest.body, 'base64').toString()), { jobId: 'job-1' });
     assert.equal(task.name, calls[1].data.task.name);
     assert.notEqual(task.name, calls[2].data.task.name);
-    const dup = new CloudTasksQueue(config, { async request() { throw { response: { status: 409 } }; } });
+    const dup = new CloudTasksQueue(config, { async request(input) { if (input.method === 'GET') return { data: validPolicy }; throw { response: { status: 409 } }; } });
     await dup.enqueue('job-1');
-    const fail = new CloudTasksQueue(config, { async request() { throw Error('secret'); } });
+    const fail = new CloudTasksQueue(config, { async request(input) { if (input.method === 'GET') return { data: validPolicy }; throw Error('secret'); } });
     await assert.rejects(fail.enqueue('job-1'), /^Error: TASK_ENQUEUE_FAILED$/);
     assert.throws(() => new CloudTasksQueue({ ...config, target: 'http://generator.example' }), /INVALID_TASKS_TARGET/);
+});
+
+test('Cloud Tasks refuses queues with unsafe limits or target overrides', async () => {
+    for (const policy of [
+        { ...validPolicy, rateLimits: { maxConcurrentDispatches: 2 } },
+        { ...validPolicy, retryConfig: { maxAttempts: 4 } },
+        { ...validPolicy, httpTarget: { uriOverride: { host: 'other.example' } } },
+        { ...validPolicy, httpTarget: { oidcToken: { audience: 'other' } } },
+        {}, null
+    ]) {
+        let writes = 0;
+        const queue = new CloudTasksQueue(config, { async request(input) { if (input.method === 'GET') return { data: policy }; writes++; return {}; } });
+        await assert.rejects(queue.enqueue('job'), /TASK_QUEUE_CONFIGURATION_INVALID/);
+        assert.equal(writes, 0);
+    }
+    const unavailable = new CloudTasksQueue(config, { async request() { throw Error('private details'); } });
+    await assert.rejects(unavailable.enqueue('job'), /^Error: TASK_QUEUE_INSPECTION_FAILED$/);
 });
 
 test('reconciliation retries queued and expired jobs but ignores live and terminal jobs', async () => {
