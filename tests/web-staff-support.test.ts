@@ -131,3 +131,25 @@ test('対応開始時に記録を開き、完了後も後入力の導線を残�
     assert.ok(nodes(tree).some(n => n.props?.requestId === 'q'));
     hooks.reset();
 });
+
+test('認証済み通知中は通知で更新し、切断中は3秒ごとの確認を使い記録フォームを維持する', async t => {
+    hooks.reset(); t.mock.timers.enable({ apis: ['setInterval'] });
+    let fetches = 0, receive!: (v: unknown) => void, status!: (v: boolean) => void;
+    const q = { ...base, status: 'in_progress', assignedTo: 'staff', assignedAt: time, startedBy: 'staff', startedAt: time };
+    const api = async (path: string) => {
+        if (path === '/staff/me') return { schemaVersion: '1', uid: 'staff' };
+        if (path === '/support-requests') { fetches++; return { requests: [q] }; }
+        if (path.includes('?status=')) return { requests: [] };
+        return { schemaVersion: '1', sessionId: 's', status: 'waiting_help', revision: 5, currentRequest: true };
+    };
+    const subscribe = (fn: (v: unknown) => void, report: (v: boolean) => void) => { receive = fn; status = report; return () => {}; };
+    const render = () => { hooks.begin(); return StaffSupport({ api, go: () => {}, subscribe }); };
+    render(); await hooks.flush(); await settle(); let tree = render();
+    nodes(tree).find(n => n.type === 'button' && text(n) === '支援記録を開く').props.onClick(); tree = render();
+    receive({ schemaVersion: '1', type: 'support.snapshot', requests: [q] }); status(true); await settle(); tree = render();
+    const afterNotification = fetches; t.mock.timers.tick(3000); await settle(); assert.equal(fetches, afterNotification);
+    status(false); t.mock.timers.tick(3000); await settle(); tree = render();
+    assert.ok(fetches > afterNotification); assert.match(text(tree), /切断中/);
+    assert.ok(nodes(tree).some(n => n.props?.requestId === 'q' && n.props?.open === true));
+    hooks.reset();
+});
