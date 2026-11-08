@@ -16,7 +16,7 @@ export async function flush(){for(const f of effects)f();await new Promise(r=>se
 const hookUrl = 'data:text/javascript;base64,' + Buffer.from(sourceHooks).toString('base64');
 const hooks = await import(hookUrl);
 let source = await readFile(new URL('../apps/web/src/staff-support.tsx', import.meta.url), 'utf8');
-source = source.replace("'react'", JSON.stringify(hookUrl)).replace("'../../../packages/shared/src/support.ts'", JSON.stringify(new URL('../packages/shared/src/support.ts', import.meta.url).href));
+source = source.replace("'react'", JSON.stringify(hookUrl)).replace("'../../../packages/shared/src/support.ts'", JSON.stringify(new URL('../packages/shared/src/support.ts', import.meta.url).href)).replace("'./support-record.tsx'", JSON.stringify('data:text/javascript,export function SupportRecordForm(){}'));
 const compiled = ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
 const { StaffSupport } = await import('data:text/javascript;base64,' + Buffer.from(compiled).toString('base64'));
 function nodes(tree: any): any[] { if (Array.isArray(tree)) return tree.flatMap(nodes); if (!React.isValidElement(tree)) return []; return [tree, ...nodes((tree.props as any).children)]; }
@@ -106,5 +106,28 @@ test('応答を失った再開要求は同じIDとrevisionで再試行する', a
     tree = render(); assert.match(text(tree), /通信失敗/);
     nodes(tree).find(n => n.type === 'button' && text(n).includes('つづける')).props.onClick(); await settle();
     assert.equal(sent.length, 2); assert.deepEqual(sent[0], sent[1]);
+    hooks.reset();
+});
+
+test('対応開始時に記録を開き、完了後も後入力の導線を残す', async () => {
+    hooks.reset(); let status = 'assigned';
+    const api = async (path: string, method = 'GET') => {
+        if (path === '/staff/me') return { schemaVersion: '1', uid: 'staff' };
+        const q = { ...base, status, assignedTo: 'staff', assignedAt: time, ...(status !== 'assigned' ? { startedBy: 'staff', startedAt: time } : {}), ...(status === 'acknowledged' ? { acknowledgedBy: 'staff', acknowledgedAt: time } : {}) };
+        if (path === '/support-requests') return { requests: status === 'acknowledged' ? [] : [q] };
+        if (path.includes('?status=')) return { requests: status === 'acknowledged' ? [q] : [] };
+        if (path.endsWith('/session-state')) return { schemaVersion: '1', sessionId: 's', status: 'waiting_help', revision: 5, currentRequest: true };
+        if (method === 'POST' && path.endsWith('/start')) status = 'in_progress';
+        if (method === 'POST' && path.endsWith('/acknowledge')) status = 'acknowledged';
+        return {};
+    };
+    const subscribe = () => () => {};
+    const render = () => { hooks.begin(); return StaffSupport({ api, go: () => {}, subscribe }); };
+    render(); await hooks.flush(); await settle(); let tree = render();
+    nodes(tree).find(n => n.type === 'button' && text(n) === '対応を始める').props.onClick(); await settle(); tree = render();
+    assert.ok(nodes(tree).some(n => n.props?.requestId === 'q' && n.props?.open === true));
+    nodes(tree).find(n => n.type === 'button' && text(n) === '対応完了だけを記録').props.onClick(); await settle(); tree = render();
+    assert.match(text(tree), /対応完了/); assert.match(text(tree), /支援記録を開く/);
+    assert.ok(nodes(tree).some(n => n.props?.requestId === 'q'));
     hooks.reset();
 });
