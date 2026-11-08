@@ -16,6 +16,15 @@ export type SafetyState = {
 export function safetyKey(uid: string, sessionId: string) {
     return `safety:${uid}:${sessionId}`;
 }
+export type PendingStart = { taskId: string; clientRequestId: string; safety?: { type: 'stop' | 'help'; clientEventId: string } };
+export function startKey(uid: string) { return `pending-start:${uid}`; }
+export function readStart(store: Store, uid: string): PendingStart | null {
+    const value = store.getItem(startKey(uid));
+    return value ? JSON.parse(value) : null;
+}
+export function saveStart(store: Store, uid: string, start: PendingStart) {
+    store.setItem(startKey(uid), JSON.stringify(start));
+}
 export function readSafety(store: Store, key: string): SafetyState {
     const value = store.getItem(key);
     return value ? JSON.parse(value) : { stopped: false, waiting: false, pending: [] };
@@ -23,6 +32,9 @@ export function readSafety(store: Store, key: string): SafetyState {
 // Persist before issuing a network request; stopped is retained after acknowledgement.
 export function hold(store: Store, key: string, event: SafetyEvent) {
     const s = readSafety(store, key);
+    // Repeated taps must not create new stop IDs, including after acknowledgement.
+    if (s.stopped)
+        return s;
     if (event.type === 'stop')
         s.stopped = true;
     else
@@ -39,6 +51,8 @@ export function delivered(store: Store, key: string, eventId: string) {
 }
 export function clearWaiting(store: Store, key: string) {
     const s = readSafety(store, key);
+    if (s.stopped)
+        return;
     s.waiting = false;
     store.setItem(key, JSON.stringify(s));
 }

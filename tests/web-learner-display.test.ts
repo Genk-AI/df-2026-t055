@@ -21,7 +21,7 @@ source = source.slice(source.indexOf('function Learner('), source.indexOf('\ncre
 const imports = `import React,{useState,useEffect,useRef} from ${JSON.stringify(hookUrl)};
 import {learnerControlPath} from ${JSON.stringify(new URL('../apps/web/src/learner-controls.ts',import.meta.url).href)};
 import {learnerStepPresentation} from ${JSON.stringify(new URL('../apps/web/src/learner-display.ts',import.meta.url).href)};
-import {hold,readSafety,flushSafety,safetyKey,clearWaiting} from ${JSON.stringify(new URL('../apps/web/src/safety.ts',import.meta.url).href)};
+import {hold,readSafety,flushSafety,safetyKey,clearWaiting,readStart,saveStart,startKey} from ${JSON.stringify(new URL('../apps/web/src/safety.ts',import.meta.url).href)};
 const api=(...args)=>globalThis.learnerApi(...args), account='learner-a', Asset=()=>null;
 const subscribeSupport=()=>()=>{}, getToken=async()=>account;
 export `;
