@@ -8,6 +8,7 @@
   "dependencies": {
     "@google-cloud/firestore": "^9.4.0",
     "firebase-admin": "^14.5.0",
-    "google-auth-library": "^11.3.3"
+    "google-auth-library": "^11.3.3",
+    "@google/genai": "^3.0.0"
   }
 }
