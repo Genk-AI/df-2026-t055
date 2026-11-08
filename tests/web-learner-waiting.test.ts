@@ -7,13 +7,13 @@ import { hold, readSafety, safetyKey } from '../apps/web/src/safety.ts';
 
 // Run the actual Learner handlers with fake hooks, without a browser or added dependency.
 const hookSource = `import React from '${import.meta.resolve('react')}';
-let state=[], cursor=0, effects=[];
+let state=[], cursor=0, effects=[], cleanups=[];
 export default React;
 export function begin(){cursor=0;effects=[];}
-export function reset(){state=[];begin();}
+export function reset(){for(const f of cleanups)f?.();state=[];cleanups=[];begin();}
 export function useState(initial){const i=cursor++;if(!(i in state))state[i]=initial;return [state[i],v=>{state[i]=typeof v==='function'?v(state[i]):v}];}
 export function useRef(initial){const i=cursor++;return state[i]??=( {current:initial} );}
-export function useEffect(fn,deps){const i=cursor++;if(!state[i]||deps.some((v,j)=>v!==state[i][j])){state[i]=deps;effects.push(fn);}}
+export function useEffect(fn,deps){const i=cursor++;if(!state[i]||deps.some((v,j)=>v!==state[i][j])){state[i]=deps;effects.push(()=>{cleanups[i]?.();cleanups[i]=fn();});}}
 export async function flush(){for(const fn of effects)fn();await new Promise(r=>setImmediate(r));}`;
 const hookUrl = 'data:text/javascript;base64,' + Buffer.from(hookSource).toString('base64');
 const hooks = await import(hookUrl);
@@ -26,7 +26,7 @@ import {learnerStepPresentation} from ${JSON.stringify(new URL('../apps/web/src/
 import {learnerControlPath} from ${JSON.stringify(new URL('../apps/web/src/learner-controls.ts', import.meta.url).href)};
 let account = 'learner-a';
 const api=(...args)=>globalThis.learnerApi(...args); const go=()=>{}; const Asset=()=>null;
-const subscribeSupport=()=>()=>{};
+const subscribeSupport=(_token,_session,receive)=>globalThis.learnerSubscribe?.(receive)??(()=>{});
 const getToken = async () => account;
 export ${source}`;
 const compiled = ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
@@ -48,6 +48,7 @@ function harness() {
     const store = new Map<string, string>();
     const local = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); }, removeItem: (k: string) => { store.delete(k); }, get length() { return store.size; }, key: (i: number) => [...store.keys()][i] ?? null };
     (globalThis as any).localStorage = local;
+    (globalThis as any).learnerSubscribe = () => () => {};
     const timers = new Map<number, () => void>();
     let timerId = 0;
     (globalThis as any).setInterval = (fn: () => void) => { const id = ++timerId; timers.set(id, fn); return id; };
@@ -81,6 +82,26 @@ test('再開後に再読み込みしても支援待ちが残らない', async ()
     assert.equal(readSafety((globalThis as any).localStorage, h.key).waiting, false);
 });
 
+test('支援状態を区別し、異なる版・古い通知を無視して同じ版と工程で再開する', async () => {
+    const h = harness(); h.setWaiting();
+    let receive!: (value: unknown) => void, closed = false;
+    (globalThis as any).learnerSubscribe = (fn: (value: unknown) => void) => { receive = fn; return () => { closed = true; }; };
+    let tree = h.render(); await hooks.flush(); tree = h.render(); await hooks.flush(); tree = h.render();
+    const update = (revision: number, supportRevision: number, status: string, releaseId = 'r') => receive({ schemaVersion: '1', type: 'session.support.updated', payload: { schemaVersion: '1', sessionId: 's1', releaseId, status: 'waiting_help', stepIndex: 0, revision, support: { requestId: 'q', revision: supportRevision, status } } });
+    update(6, 2, 'assigned'); tree = h.render(); assert.match(text(tree), /担当の職員が決まりました/);
+    update(100, 100, 'in_progress', 'wrong-release'); tree = h.render(); assert.doesNotMatch(text(tree), /職員が対応しています/);
+    update(7, 3, 'in_progress'); tree = h.render(); assert.match(text(tree), /職員が対応しています/);
+    receive({ schemaVersion: '1', type: 'session.support.updated', payload: { schemaVersion: '1', sessionId: 's1', releaseId: 'r', status: 'active', stepIndex: 0, revision: 7 } });
+    tree = h.render(); assert.match(text(tree), /職員をよんでいます/);
+    update(6, 2, 'assigned'); tree = h.render(); assert.match(text(tree), /職員が対応しています/);
+    update(8, 4, 'acknowledged'); tree = h.render(); assert.match(text(tree), /対応が終わりました/);
+    receive({ schemaVersion: '1', type: 'session.support.updated', payload: { schemaVersion: '1', sessionId: 's1', releaseId: 'r', status: 'active', stepIndex: 0, revision: 9 } });
+    tree = h.render(); assert.match(text(tree), /折る/); assert.doesNotMatch(text(tree), /職員をよんでいます/);
+    assert.equal(readSafety((globalThis as any).localStorage, h.key).waiting, false);
+    await hooks.flush();
+    assert.equal(closed, true);
+});
+
 test('送信待ちの手伝ってが残っている間は待ち表示を解除しない', async () => {
     const h = harness();
     h.setWaiting([{ clientEventId: 'help-1', expectedRevision: 5, type: 'help' }]);
@@ -90,6 +111,17 @@ test('送信待ちの手伝ってが残っている間は待ち表示を解除�
     await h.tick(); tree = h.render();
     assert.match(text(tree), /職員をよんでいます/);
     assert.equal(readSafety((globalThis as any).localStorage, h.key).waiting, true);
+});
+
+test('未送信停止より後に再開通知が届いても停止表示を維持する', async () => {
+    const h = harness(); h.setWaiting();
+    let receive!: (value: unknown) => void;
+    (globalThis as any).learnerSubscribe = (fn: (value: unknown) => void) => { receive = fn; return () => {}; };
+    let tree = h.render(); await hooks.flush(); tree = h.render(); await hooks.flush(); tree = h.render();
+    nodes(tree).find(node => node.type === 'button' && text(node).includes('やめる')).props.onClick();
+    receive({ schemaVersion: '1', type: 'session.support.updated', payload: { schemaVersion: '1', sessionId: 's1', releaseId: 'r', status: 'active', stepIndex: 0, revision: 20 } });
+    tree = h.render(); assert.match(text(tree), /作業をやめました/); assert.doesNotMatch(text(tree), /折る/);
+    assert.equal(readSafety((globalThis as any).localStorage, h.key).stopped, true);
 });
 
 test('再開前の取得を待つ間に停止すると再開要求を送らず手順を閉じる', async () => {
