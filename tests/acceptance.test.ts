@@ -590,3 +590,18 @@ test('Fake WAVは短文長に応じた長さ・Vertexは明示選択のみで未
     assert.equal((configuredTts({ TTS_PROVIDER: 'vertex', TTS_MODEL: 'chosen' }) as VertexTtsAdapter).model, 'chosen');
     await assert.rejects(vertex.synthesize('確認済み'), /VERTEX_TTS_NOT_CONFIGURED/);
 });
+
+test('期限のない実行中ジョブは再取得して完了できる', async () => {
+    const h = await harness();
+    try {
+        const { taskId } = await h.task();
+        const g = await h.ok(`/tasks/${taskId}/generations`, 'POST', { learnerId: 'a' });
+        const j = h.db.get('generationJobs', g.jobId)!;
+        h.db.put('generationJobs', { ...j, status: 'running', attempt: 1 });
+        await h.run(j.id);
+        assert.equal(h.db.get('generationJobs', j.id)!.status, 'succeeded');
+        assert.equal(h.db.get('generationJobs', j.id)!.attempt, 2);
+    } finally {
+        await h.close();
+    }
+});

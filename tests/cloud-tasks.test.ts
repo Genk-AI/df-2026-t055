@@ -28,13 +28,14 @@ test('Cloud Tasks sends OIDC, deadline and bounded deterministic recovery names'
     assert.throws(() => new CloudTasksQueue({ ...config, target: 'http://generator.example' }), /INVALID_TASKS_TARGET/);
 });
 
-test('reconciliation retries queued and expired jobs but ignores live and terminal jobs', async () => {
+test('reconciliation retries queued, expired and missing-lease jobs but ignores live and terminal jobs', async () => {
     const db = new MemoryRepository();
     for (const [id, status, leaseUntil] of [['queued', 'queued', 0], ['expired', 'running', 9], ['live', 'running', 11], ['finished', 'succeeded', 0]] as const)
         db.put('generationJobs', doc('org', { id, status, leaseUntil }));
+    db.put('generationJobs', doc('org', { id: 'missing-lease', status: 'running' }));
     const sent: string[] = [];
     await reconcileGenerationJobs(db, { async enqueue(id) { sent.push(id); } }, 10);
-    assert.deepEqual(sent.sort(), ['expired', 'queued']);
+    assert.deepEqual(sent.sort(), ['expired', 'missing-lease', 'queued']);
     await assert.rejects(reconcileGenerationJobs(db, { async enqueue() { throw Error('offline'); } }, 10), /TASK_RECONCILIATION_FAILED/);
 });
 
@@ -71,4 +72,17 @@ test('failed initial enqueue leaves a committed job for a later reconciliation',
     const sent: string[] = [];
     await reconcileGenerationJobs(db, { async enqueue(id) { sent.push(id); } });
     assert.deepEqual(sent, [result.jobId]);
+});
+
+test('local drain recovers a running job without a lease', async () => {
+    const { createApp } = await import('../apps/api/src/app.ts');
+    const db = new MemoryRepository();
+    db.put('generationJobs', doc('org', { id: 'missing-lease', status: 'running' }));
+    const processed: string[] = [];
+    const app = createApp({ db, internalToken: 'test-internal', runJob: async id => { processed.push(id); } }).app;
+    const response = await app.fetch(new Request('http://localhost/api/v1/internal/drain', {
+        method: 'POST', headers: { authorization: 'Bearer test-internal', 'content-type': 'application/json' }, body: '{}'
+    }));
+    assert.equal(response.status, 200);
+    assert.deepEqual(processed, ['missing-lease']);
 });

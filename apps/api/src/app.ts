@@ -782,7 +782,7 @@ export function createApp(options: {
     api.post('/internal/drain', async (req, res) => {
         if (!options.runJob)
             fail(503, 'WORKER_UNAVAILABLE');
-        const j = (await db.all('generationJobs')).find(j => j.status === 'queued' || j.status === 'running' && j.leaseUntil <= Date.now());
+        const j = (await db.all('generationJobs')).find(j => j.status === 'queued' || j.status === 'running' && (j.leaseUntil == null || j.leaseUntil <= Date.now()));
         if (j)
             await options.runJob(j.id);
         send(res, { status: 'processed' });

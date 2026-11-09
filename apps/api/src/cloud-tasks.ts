@@ -49,7 +49,7 @@ export async function reconcileGenerationJobs(db: Repository, queue: GenerationQ
     const jobs = await db.all('generationJobs');
     let failures = 0;
     for (const job of jobs) {
-        if (job.status !== 'queued' && !(job.status === 'running' && job.leaseUntil <= now)) continue;
+        if (job.status !== 'queued' && !(job.status === 'running' && (job.leaseUntil == null || job.leaseUntil <= now))) continue;
         try { await queue.enqueue(job.id, now); } catch { failures++; }
     }
     if (failures) throw Error('TASK_RECONCILIATION_FAILED');
