@@ -3,7 +3,7 @@ import http, { type Request, type Response, type NextFunction } from './http.ts'
 import { uploadVideo } from './upload.ts';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { releaseCopyRequestSchema, releaseCopyResponseSchema, draftDetailSchema, editedStepSchema, eventSchema, generationRequestSchema, approvalRequestSchema, releaseSchema, draftPatchSchema, sessionStartSchema, normalizeRelease, projectReleaseToSessionSteps, learnerSessionSchema, type Member } from '../../../packages/shared/src/index.ts';
+import { releaseCopyRequestSchema, releaseCopyResponseSchema, draftDetailSchema, editedStepSchema, eventSchema, approvalRequestSchema, releaseSchema, draftPatchSchema, sessionStartSchema, normalizeRelease, projectReleaseToSessionSteps, learnerSessionSchema, type Member } from '../../../packages/shared/src/index.ts';
 import { learnerProfileCreateRequestSchema, learnerProfileUpdateRequestSchema, learnerProfileDetailSchema, learnerProfileListResponseSchema, toLearnerProfileSummary } from '../../../packages/shared/src/learner-profile.ts';
 import { supportResumeRequestSchema, supportResumeResponseSchema, supportRecordSchema, supportRecordSaveRequestSchema, supportOperationRequestSchema, supportStartResponseSchema, supportAcknowledgeResponseSchema, supportClaimResponseSchema, supportRequestListResponseSchema, supportRequestStatusQuerySchema } from '../../../packages/shared/src/support.ts';
 import { MemoryRepository, seed, doc, id, now, type Repository, type Storage, type Auth, type Doc } from './adapters.ts';
@@ -14,6 +14,7 @@ import { configuredTts, type TtsAdapter } from './tts.ts';
 import { media } from './media.ts';
 import type { GenerationQueue } from './cloud-tasks.ts';
 import { generationEnabled } from './generation-control.ts';
+import { guideGenerationRequestSchema, improvementGuideInputSnapshotSchema } from '../../../packages/shared/src/generation.ts';
 export class HttpError extends Error {
     constructor(public status: number, public code: string) {
         super(code);
@@ -192,21 +193,46 @@ export function createApp(options: {
     });
     api.post('/tasks/:id/generations', async (req, res) => {
         staff(res);
-        const { learnerId } = generationRequestSchema.parse(req.body);
+        const request = guideGenerationRequestSchema.parse(req.body);
+        const { learnerId } = request;
         const t = await get('tasks', req.params.id, res);
-        const learner = await get('learners', learnerId, res);
-        if (t.status !== 'ready')
-            fail(409, 'VIDEO_NOT_READY');
+        await get('learners', learnerId, res);
+        const improvement = 'clientRequestId' in request ? request : undefined;
+        const requestHash = improvement ? createHash('sha256').update(JSON.stringify({ taskId: t.id, ...improvement })).digest('hex') : undefined;
         const result = await db.transaction(async () => {
-            if (!await generationEnabled(db)) fail(409, 'GENERATION_PAUSED');
             const jobs = await db.all('generationJobs');
+            if (improvement) {
+                const existing = jobs.find(j => j.clientRequestId === improvement.clientRequestId && j.orgId === t.orgId);
+                if (existing) {
+                    if (existing.requestHash !== requestHash) fail(409, 'IDEMPOTENCY_CONFLICT');
+                    return { jobId: existing.id, draftId: existing.draftId };
+                }
+            }
+            if (!await generationEnabled(db)) fail(409, 'GENERATION_PAUSED');
+            if ((await get('tasks', t.id, res)).status !== 'ready') fail(409, 'VIDEO_NOT_READY');
+            const learner = await get('learners', learnerId, res);
             if (jobs.reduce((n, j) => n + j.budgetUsed, 0) >= limit || jobs.filter(j => j.taskId === t.id).reduce((n, j) => n + j.budgetUsed, 0) >= 10)
                 fail(409, 'GENERATION_LIMIT');
+            let inputSnapshot: unknown;
+            if (improvement) {
+                const source = await get('releases', improvement.sourceReleaseId, res);
+                const assignment = (await db.all('assignments')).find(a => a.orgId === t.orgId && a.taskId === t.id && a.learnerId === learnerId);
+                if (source.taskId !== t.id || source.learnerId !== learnerId || assignment?.releaseId !== source.id) fail(409, 'SOURCE_RELEASE_CHANGED');
+                for (const input of improvement.supportInputs) {
+                    const record = await get('supportRecords', input.recordId, res);
+                    if (record.taskId !== t.id || record.learnerId !== learnerId || record.revision !== input.revision) fail(409, 'SUPPORT_RECORD_CHANGED');
+                }
+                inputSnapshot = improvementGuideInputSnapshotSchema.parse({ taskId: t.id, learnerId, sourceReleaseId: source.id,
+                    sourceReleaseVersion: source.version, supportInputs: improvement.supportInputs, correctionRefs: [],
+                    displayMode: learner.preferences.displayMode ?? 'photo_text', confirmedGuidance: learner.confirmedGuidance ?? [] });
+            }
             const d = doc(t.orgId, {
-                taskId: t.id, learnerId, displayMode: learner.preferences.displayMode ?? 'photo_text', audioGuidance: learner.preferences.audioGuidance ?? false, revision: 0, status: 'generating', editedSteps: [], reviewChecks: { presentationConfirmed: false, flagResolution: '', steps: {} }, updatedBy: member(res).uid
+                taskId: t.id, learnerId, displayMode: learner.preferences.displayMode ?? 'photo_text', audioGuidance: learner.preferences.audioGuidance ?? false, revision: 0, status: 'generating', editedSteps: [], reviewChecks: { presentationConfirmed: false, flagResolution: '', steps: {} }, updatedBy: member(res).uid,
+                ...(improvement ? { sourceReleaseId: improvement.sourceReleaseId, appliedSupportRecordRefs: [] } : {})
             });
             const j = doc(t.orgId, {
-                taskId: t.id, draftId: d.id, status: 'queued', attempt: 0, budgetUsed: 1, modelId: options.modelId ?? 'fake-fixture', promptVersion: '1'
+                taskId: t.id, draftId: d.id, kind: 'guide', status: 'queued', attempt: 0, budgetUsed: 1, modelId: options.modelId ?? 'fake-fixture', promptVersion: '1',
+                ...(improvement ? { inputSnapshot, clientRequestId: improvement.clientRequestId, requestHash } : {})
             });
             d.jobId = j.id;
             await db.put('drafts', d);

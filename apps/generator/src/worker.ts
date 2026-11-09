@@ -8,6 +8,8 @@ export function createWorker(db: Repository, storage: Storage, model: VideoModel
         let job = await db.get('generationJobs', jobId);
         if (!job)
             throw Error('JOB_NOT_FOUND');
+        // Improvement jobs stay queued until their dedicated worker is installed.
+        if (job.inputSnapshot?.sourceReleaseId) throw Error('IMPROVEMENT_WORKER_NOT_CONFIGURED');
         if (['succeeded', 'failed'].includes(job.status))
             return;
         const claimed = await db.transaction(async () => {
