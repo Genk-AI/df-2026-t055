@@ -30,17 +30,23 @@ export const generationJobStatusSchema = generationCreateResponseSchema.extend({
 export const generationPreferencesSchema = z.object({
     sentenceLength: z.number().int().min(1).max(40), splitHints: z.string().max(200), audioGuidance: z.boolean()
 }).strict();
+export const frozenCorrectionSchema = z.object({
+    correctionId: id, draftRevision: revision,
+    changes: z.array(z.object({ stepId: id, field: z.enum(['text', 'imageAltText', 'visibleCaution']), before: z.string().max(2000), after: z.string().max(2000) }).strict()).min(1),
+    contextSummary: z.lazy(() => correctionContextOutputSchema).optional()
+}).strict();
 export const initialGuideInputSnapshotSchema = z.object({
     taskId: id, learnerId: id, videoAssetId: id, title: id,
     completionCriteria: z.string().max(2000), durationMs: revision,
-    preferences: generationPreferencesSchema, displayMode, confirmedGuidance
+    preferences: generationPreferencesSchema, displayMode, confirmedGuidance,
+    correctionInputs: z.array(frozenCorrectionSchema).max(20).optional()
 }).strict();
 export const correctionRefSchema = z.object({ correctionId: id, draftRevision: revision }).strict();
 export const improvementGuideInputSnapshotSchema = z.object({
     taskId: id, learnerId: id, sourceReleaseId: id, sourceReleaseVersion: z.number().int().min(1),
     supportInputs, correctionRefs: z.array(correctionRefSchema).max(20).refine(
         refs => new Set(refs.map(ref => ref.correctionId)).size === refs.length, 'Duplicate correctionId'
-    ), displayMode, confirmedGuidance
+    ), displayMode, confirmedGuidance, correctionInputs: z.array(frozenCorrectionSchema).max(20).optional()
 }).strict();
 const fields = ['text', 'visibleCaution', 'imageAltText', 'imageAssetId', 'sourceStartMs', 'sourceEndMs', 'frameMs', 'verifiedObservation', 'verifiedSpeech', 'coaching', 'completionCheck', 'position'] as const;
 // null represents an absent step or optional field; positions are zero-based.

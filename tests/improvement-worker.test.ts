@@ -11,7 +11,7 @@ function setup() {
     db.put('learners', doc('demo', { id: 'a', displayName: 'PRIVATE NAME', confirmedGuidance: ['changed later'], preferences: { sentenceLength: 10, splitHints: 'private preference' } }));
     db.put('releases', doc('demo', { id: 'release', taskId: 'task', learnerId: 'a', version: 1, learnerSteps: [{ order: 1, text: '折る', imageAltText: '写真', visibleCaution: '', imageAssetId: 'private-asset-id', stepId: 'step' }], staffGuide: [{ coaching: 'private staff note' }] }));
     db.put('drafts', doc('demo', { id: 'draft', jobId: 'job', taskId: 'task', learnerId: 'a', sourceReleaseId: 'release', status: 'generating' }));
-    db.put('generationJobs', doc('demo', { id: 'job', taskId: 'task', draftId: 'draft', status: 'queued', attempt: 0, budgetUsed: 1, inputSnapshot: { taskId: 'task', learnerId: 'a', sourceReleaseId: 'release', sourceReleaseVersion: 1, supportInputs: [{ recordId: 'record', revision: 1, summary: '確認された要約' }], correctionRefs: [], displayMode: 'photo_only', confirmedGuidance: ['ゆっくり'] } }));
+    db.put('generationJobs', doc('demo', { id: 'job', taskId: 'task', draftId: 'draft', status: 'queued', attempt: 0, budgetUsed: 1, inputSnapshot: { taskId: 'task', learnerId: 'a', sourceReleaseId: 'release', sourceReleaseVersion: 1, supportInputs: [{ recordId: 'record', revision: 1, summary: '確認された要約' }], correctionRefs: [{ correctionId: 'history', draftRevision: 3 }], correctionInputs: [{ correctionId: 'history', draftRevision: 3, changes: [{ stepId: 'step', field: 'text', before: '前', after: '後' }], contextSummary: { editSummary: '編集', nextDraftHint: '確認', reviewFlags: [] } }], displayMode: 'photo_only', confirmedGuidance: ['ゆっくり'] } }));
     return db;
 }
 
@@ -25,7 +25,9 @@ test('improvement sends only allowed fixed inputs and leaves the old release unt
     assert.equal(seen.displayMode, 'photo_only');
     assert.deepEqual(seen.confirmedGuidance, ['ゆっくり']);
     assert.deepEqual(seen.improvement, { sourceSteps: [{ order: 1, text: '折る', imageAltText: '写真', visibleCaution: '' }], supportSummaries: ['確認された要約'] });
+    assert.deepEqual(seen.corrections, [{ changes: [{ field: 'text', before: '前', after: '後' }], referenceNote: { editSummary: '編集', nextDraftHint: '確認', reviewFlags: [] } }]);
     const raw = JSON.stringify(seen);
+    assert.equal(raw.includes('history'), false);
     for (const value of ['PRIVATE NAME', 'changed later', 'private preference', 'private staff note', 'private-asset-id', 'record']) assert.equal(raw.includes(value), false);
     assert.equal(db.get('generationJobs', 'job')?.status, 'failed');
     assert.deepEqual(db.get('releases', 'release'), old);

@@ -17,6 +17,7 @@ function setup() {
 
 test('improvement is idempotent, fixed at acceptance, and preserves the accepted snapshot', async () => {
     const { db, body, post } = setup();
+    db.put('draftCorrections', doc('demo', { id: 'history', taskId: 'task', learnerId: 'a', draftRevision: 4, changes: [{ stepId: 'step', field: 'text', before: '前', after: '修正' }] }));
     const [first, second] = await Promise.all([post(body), post(body)]);
     assert.equal(first.status, 202); assert.equal(second.status, 202);
     const result = await first.json() as { jobId: string; draftId: string };
@@ -24,6 +25,10 @@ test('improvement is idempotent, fixed at acceptance, and preserves the accepted
     assert.equal(db.all('generationJobs').length, 1);
     const job = db.get('generationJobs', result.jobId)!;
     assert.deepEqual(job.inputSnapshot.supportInputs, body.supportInputs);
+    assert.deepEqual(job.inputSnapshot.correctionRefs, [{ correctionId: 'history', draftRevision: 4 }]);
+    assert.equal(job.inputSnapshot.correctionInputs[0].changes[0].after, '修正');
+    db.put('draftCorrections', { ...db.get('draftCorrections', 'history')!, contextSummary: { editSummary: '後からの要約', nextDraftHint: '後から', reviewFlags: [] } });
+    assert.equal(db.get('generationJobs', result.jobId)!.inputSnapshot.correctionInputs[0].contextSummary, undefined);
     assert.equal(JSON.stringify(job.inputSnapshot).includes('private raw note'), false);
     const record = db.get('supportRecords', 'record')!;
     db.put('supportRecords', { ...record, revision: 2, observedDifficulty: 'changed' });

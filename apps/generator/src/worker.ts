@@ -2,7 +2,7 @@ import { doc, now, type Repository, type Storage, type Doc } from '../../api/src
 import { media } from '../../api/src/media.ts';
 import type { EditedStep } from '../../../packages/shared/src/index.ts';
 import { validateProposal, type VideoModel } from './model.ts';
-import { improvementGuideInputSnapshotSchema, correctionContextInputSnapshotSchema, correctionContextOutputSchema } from '../../../packages/shared/src/generation.ts';
+import { improvementGuideInputSnapshotSchema, initialGuideInputSnapshotSchema, correctionContextInputSnapshotSchema, correctionContextOutputSchema } from '../../../packages/shared/src/generation.ts';
 import { FakeCorrectionModel, type CorrectionModel } from './correction-model.ts';
 export function createWorker(db: Repository, storage: Storage, model: VideoModel, globalLimit: number, correctionModel: CorrectionModel = new FakeCorrectionModel()) {
     return async function run(jobId: string) {
@@ -60,10 +60,15 @@ export function createWorker(db: Repository, storage: Storage, model: VideoModel
             let improvement: import('./model.ts').ModelInput['improvement'];
             let displayMode = d.displayMode ?? 'photo_text';
             let confirmedGuidance = l.confirmedGuidance ?? [];
+            let frozen = job.inputSnapshot?.sourceReleaseId ? undefined : job.inputSnapshot ? initialGuideInputSnapshotSchema.parse(job.inputSnapshot) : undefined;
+            if (frozen && (frozen.taskId !== d.taskId || frozen.learnerId !== d.learnerId || frozen.videoAssetId !== v.id)) throw Error('INVALID_GUIDE_SNAPSHOT');
+            let correctionInputs = frozen?.correctionInputs;
+            if (frozen) { displayMode = frozen.displayMode; confirmedGuidance = frozen.confirmedGuidance; }
             if (job.inputSnapshot?.sourceReleaseId) {
                 const snapshot = improvementGuideInputSnapshotSchema.parse(job.inputSnapshot);
                 const source = await db.get('releases', snapshot.sourceReleaseId);
                 if (!source || source.orgId !== d.orgId || source.taskId !== d.taskId || source.learnerId !== d.learnerId || source.version !== snapshot.sourceReleaseVersion || snapshot.taskId !== d.taskId || snapshot.learnerId !== d.learnerId || d.sourceReleaseId !== source.id) throw Error('INVALID_IMPROVEMENT_SOURCE');
+                correctionInputs = snapshot.correctionInputs;
                 improvement = { sourceSteps: source.learnerSteps.map((s: any) => ({ order: s.order, text: s.text, imageAltText: s.imageAltText, visibleCaution: s.visibleCaution })), supportSummaries: snapshot.supportInputs.map(input => input.summary) };
                 displayMode = snapshot.displayMode;
                 confirmedGuidance = snapshot.confirmedGuidance;
@@ -73,7 +78,8 @@ export function createWorker(db: Repository, storage: Storage, model: VideoModel
             errorCode = 'MODEL_CALL_FAILED';
             const output = await Promise.race([model.generate({
                     // 未確認の希望は省略できる（正本第2節）ため、生成への入力は空の分割ヒントで補う。
-                    videoUri: v.objectPath, title: t.title, completionCriteria: '帯紙の向き、袋口、テープを見本と比較する', preferences: improvement ? { sentenceLength: 40, splitHints: '', audioGuidance: false } : { sentenceLength: l.preferences.sentenceLength, splitHints: l.preferences.splitHints ?? '', audioGuidance: false }, displayMode, confirmedGuidance, durationMs: v.durationMs, ...(improvement ? { improvement } : {})
+                    videoUri: v.objectPath, title: frozen?.title ?? t.title, completionCriteria: frozen?.completionCriteria ?? '帯紙の向き、袋口、テープを見本と比較する', preferences: frozen?.preferences ?? (improvement ? { sentenceLength: 40, splitHints: '', audioGuidance: false } : { sentenceLength: l.preferences.sentenceLength, splitHints: l.preferences.splitHints ?? '', audioGuidance: false }), displayMode, confirmedGuidance, durationMs: v.durationMs, ...(improvement ? { improvement } : {}),
+                    ...(correctionInputs?.length ? { corrections: correctionInputs.map(c => ({ changes: c.changes.map(v => ({ field: v.field, before: v.before, after: v.after })), ...(c.contextSummary ? { referenceNote: c.contextSummary } : {}) })) } : {})
                 }, controller.signal), new Promise<never>((_, reject) => {
                     timeout = setTimeout(() => {
                         errorCode = 'MODEL_TIMEOUT';

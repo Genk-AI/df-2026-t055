@@ -63,6 +63,7 @@ test('履歴保存失敗時は下書き更新もロールバックする', async
     assert.equal(h.db.get('drafts', 'draft')!.revision, 1);
     assert.deepEqual(h.db.get('drafts', 'draft')!.editedSteps, h.steps);
     assert.equal(h.db.all('draftCorrections').length, 0);
+    assert.equal(h.db.all('correctionCounters').length, 0);
 });
 
 test('20工程すべてを入れ替えても追加と削除の最大480項目を記録できる', async () => {
@@ -114,4 +115,21 @@ test('pause and invalid model output do not block or undo editing', async () => 
     assert.equal(h.db.get('generationJobs', job.id)!.status, 'failed');
     assert.equal(h.db.get('drafts', 'draft')!.status, 'editing');
     assert.equal(h.db.get('drafts', 'draft')!.editedSteps[0].text, '二回目');
+});
+
+test('different drafts of the same person and task serialize correction sequence', async () => {
+    const h = harness();
+    h.db.put('drafts', { ...h.db.get('drafts', 'draft')!, id: 'other-draft' });
+    const first = [{ ...h.steps[0], text: '一つ目' }, h.steps[1]];
+    const second = [{ ...h.steps[0], text: '二つ目' }, h.steps[1]];
+    const [a, b] = await Promise.all([
+        h.request('/drafts/draft', 'PATCH', { expectedRevision: 1, editedSteps: first, reviewChecks: h.checks }),
+        h.request('/drafts/other-draft', 'PATCH', { expectedRevision: 1, editedSteps: second, reviewChecks: h.checks })
+    ]);
+    assert.equal(a.status, 200); assert.equal(b.status, 200);
+    assert.deepEqual(h.db.all('draftCorrections').map(c => c.correctionSequence).sort(), [1, 2]);
+    assert.equal(h.db.all('correctionCounters')[0].sequence, 2);
+    const visible = await h.request('/learners/a/work-guides/task/corrections');
+    assert.equal(visible.status, 200);
+    assert.ok(visible.body.corrections.every((c: any) => !('correctionSequence' in c)));
 });
