@@ -4,10 +4,10 @@
 
 ## 現在の実行境界
 
-**この版は本番デプロイ不可。** 両entrypointの `NODE_ENV=production` ガードを維持し、イメージもproductionを既定にする。ローカル検証だけ明示的に `NODE_ENV=development` を渡す。本番でdevelopmentに変えてガードを回避しない。
+**この版は本番デプロイ不可。** API entrypointの `NODE_ENV=production` ガードを維持し、イメージはproductionを既定にする。generatorはCloud Tasks用の設定を明示した場合に限りクラウド用エンドポイントを起動する。ローカル検証だけ明示的に `NODE_ENV=development` を渡し、本番でdevelopmentに変えてガードを回避しない。
 
-- APIのFirebase検証クライアント、Firestore/Storage実クライアント、Cloud Tasksキュー/OIDCのentrypointへの接続が未完了。既存OPEN PRの内容は取り込んでいない（基点は #36 / PR #111）。
-- 現generatorはローカルAPIへの認証付きHTTP転送とdrainポーリング。生成本体はAPI側workerで動く。Cloud Tasks HTTP内でgeneratorが生成を完了する本番構成への接続は別作業。応答後処理・ポーリングに依存する状態では本番投入しない。
+- Firebase、Firestore、Storage、Cloud Tasks/OIDC、VertexとTTSのアダプター接続は先行ドラフトPRにある。実GCPの認証・IAM・ネットワーク・利用可能モデル・キュー設定の結合検証は未実施。
+- ローカルgeneratorはAPIへの認証付き転送とdrainポーリングを使う。クラウド用はFirestore等へ直接接続し、Cloud Tasks HTTP内で生成する。投入失敗・期限切れからの復旧には別途Cloud Schedulerが必要。
 - ローカル検証の `.local/assets` とメモリDBは使い捨て。本番ではFirestore・非公開Storageへ保存し、ディスクは `TMPDIR=/tmp` の動画処理用一時ファイルだけに使う。`media.ts` のfinally削除は維持。
 - 新しいアプリログは追加していない。実運用のCloud LoggingはrequestId・ジョブ状態・エラーコードのみとし、本文・トークン・プロフィール・原動画等を記録しない。
 
@@ -34,7 +34,7 @@ ffmpegはjohnvansickle.comの `ffmpeg-release-amd64-static.tar.xz`（ffprobe同�
 | `API_PORT` / `GENERATOR_PORT` | 明示値があればPORTより優先。通常のホスト起動の既定3001/3002は維持 |
 | `LISTEN_HOST` | イメージは0.0.0.0、通常のホスト起動は127.0.0.1 |
 | `TMPDIR` | /tmp。nodeユーザー（UID/GID 1000）で利用可能 |
-| `NODE_ENV` | production。本番未接続の現状は起動拒否。ローカルのみdevelopment |
+| `NODE_ENV` | production。APIは現状起動拒否。ローカルのみdevelopment |
 | `API_URL` | ローカルgeneratorからAPIへ接続するURL（既定http://127.0.0.1:3001） |
 | `INTERNAL_TOKEN` | ローカル両サービスへ同じ一時ランダム値を実行時に渡す。イメージやログへ保存しない |
 | `WEB_ORIGIN` | 公開WebのHTTPSオリジン。本番では公開URLと一致させる |
@@ -62,25 +62,25 @@ node scripts/check-container-http.mjs http://127.0.0.1:18080 http://127.0.0.1:18
 
 ## Cloud BuildとArtifact Registry（今後の実施手順）
 
-必要入力：GCPプロジェクトID、リージョン（基本 `asia-northeast1`）、既存Docker形式Artifact Registryリポジトリ名、タグ（レビュー済みコミットSHA推奨、未指定はBUILD_ID）、ビルド実行サービスアカウント。Cloud Build/Artifact Registry APIと、対象リポジトリへのArtifact Registry Writer権限を基盤担当が準備する。認証は実行主体の権限を使い、鍵ファイルをイメージやビルド入力へ置かない。
+必要入力：GCPプロジェクトID、リージョン（基本 `asia-northeast1`）、既存Docker形式Artifact Registryリポジトリ名、タグ（レビュー済みコミットSHA推奨、未指定はBUILD_ID）、ビルド実行サービスアカウント、Firebase Webアプリの公開設定（APIキー・認証ドメイン・FirebaseプロジェクトID）。Cloud Build/Artifact Registry APIと、対象リポジトリへのArtifact Registry Writer権限を基盤担当が準備する。認証は実行主体の権限を使い、鍵ファイルをイメージやビルド入力へ置かない。
 
 以下は将来の操作例であり今回未実行。pushを伴うため実施担当が別途承認を得る。
 
 ```sh
 gcloud builds submit . --project="$PROJECT_ID" --config=cloudbuild.yaml \
-  --substitutions="_REGION=$REGION,_REPOSITORY=$REPOSITORY,_TAG=$COMMIT_SHA"
+  --substitutions="_REGION=$REGION,_REPOSITORY=$REPOSITORY,_TAG=$COMMIT_SHA,_FIREBASE_API_KEY=$FIREBASE_WEB_API_KEY,_FIREBASE_AUTH_DOMAIN=$FIREBASE_AUTH_DOMAIN,_FIREBASE_PROJECT_ID=$FIREBASE_PROJECT_ID"
 ```
 
-`cloudbuild.yaml` は前段のNode 24で同じ準備スクリプトを実行し、2種のDocker build後、`images` に指定した次のタグで保存する。Cloud Runデプロイは自動実行しない。
+`cloudbuild.yaml` はWebビルド時にFirebaseモードと公開設定を渡し、値が不足すればイメージ作成前に失敗する。公開設定はWeb配信されるため秘密鍵を指定しない。APIキーの制限と認証ドメインを確認する。ローカルの準備スクリプトは引き続きdemoモードを使える。前段のNode 24で同じ準備スクリプトを実行し、2種のDocker build後、`images` に指定した次のタグで保存する。Cloud Runデプロイは自動実行しない。
 
 - `$REGION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/web-api:$COMMIT_SHA`
 - `$REGION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/generator:$COMMIT_SHA`
 
 ## Cloud Run（本番アダプター結合後のみ）
 
-追加の入力：レビュー済み両イメージのdigest、web用・generator用・Tasks呼出用の各サービスアカウント、公開Web URL、generator URL/OIDC audience、Tasksキュー名・ロケーション、非公開Storageバケット、Firestoreデータベース・org ID、Firebaseプロジェクト、Vertexプロジェクト・利用ロケーション・AI担当が決めたモデルID、受付上限。既存アダプターの環境設定名は `AUTH_BACKEND=firebase`、`REPOSITORY_BACKEND=firestore`、`STORAGE_BACKEND=cloud`、`STORAGE_BUCKET`、`FIRESTORE_ORG_ID`、`MODEL_PROVIDER=vertex`、`GOOGLE_CLOUD_PROJECT`、`GOOGLE_CLOUD_LOCATION`、`VERTEX_MODEL`、`VIDEO_BUCKET`。SDK/OIDC/キュー接続後に実際の設定契約を再照合する。TTSは別途採用・結合を確認する。
+追加の入力：レビュー済み両イメージのdigest、web用・generator用・Tasks呼出用の各サービスアカウント、公開Web URL、generator URL/OIDC audience、Tasksキュー名・ロケーション、非公開Storageバケット、Firestoreデータベース・org ID、Firebaseプロジェクト、Vertexプロジェクト・利用ロケーション・AI担当が決めたモデルID、受付上限。既存アダプターの環境設定名は `AUTH_BACKEND=firebase`、`REPOSITORY_BACKEND=firestore`、`STORAGE_BACKEND=cloud`、`STORAGE_BUCKET`、`FIRESTORE_ORG_ID`、`MODEL_PROVIDER=vertex`、`GOOGLE_CLOUD_PROJECT`、`GOOGLE_CLOUD_LOCATION`、`VERTEX_MODEL`、`VIDEO_BUCKET`。詳細は [Firebase](firebase-auth.md)、[Cloud Tasks](cloud-tasks.md)、[Cloud Storage](cloud-storage.md)、[TTS](vertex-tts.md) の設定を参照し、実環境で結合を確認する。
 
-基盤担当はwebに必要なFirestore/Storage/Tasks enqueue権限、generatorに必要なFirestore/Storage/Vertex実行権限、Tasks呼出用だけにgeneratorのRun Invoker権限を最小範囲で付与する。キューは並列1、HTTP dispatch deadline240秒、Runはtimeout300秒・min0・max web2/generator1。Storageは非公開、ブラウザからFirestore/Storageへの直接アクセスなし。予算5/10/15ドル通知と15ドルでの受付停止運用を用意する。
+基盤担当はwebに必要なFirestore/Storage/Tasks enqueue権限、generatorに必要なFirestore/Storage/Vertex実行権限、Tasks呼出用と復旧Scheduler呼出用の専用アカウントにgeneratorのRun Invoker権限を最小範囲で付与する。キューは並列1、HTTP dispatch deadline240秒、Runはtimeout300秒・min0・max web2/generator1。Storageは非公開、ブラウザからFirestore/Storageへの直接アクセスなし。予算5/10/15ドル通知と15ドルでの受付停止運用を用意する。
 
 本番ガードの解除は必要アダプターと受入条件を実装・レビューした別変更で行う。その後、秘密を含まない環境設定ファイル（管理対象外）とdigestを用意して、例として次を実施する。
 
