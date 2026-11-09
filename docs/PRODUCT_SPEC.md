@@ -313,7 +313,7 @@ API側でも同じスキーマ、文字数、時刻、参照先を検査する�
 - Cloud Tasksは生成キューを並列1に制限し、生成タイムアウトを240秒、Cloud Run側を300秒にする。タスク再配送とジョブのリース・冪等処理を組み合わせる。
 - Firestoreは手順、承認、割当、プロフィール、支援イベント・記録と生成時点の参照を永続化する。Storageは非公開とし、公開ACLと一般公開URLを使わない。画像取得もAPI経由にする。
 - WebSocketはweb-apiで受ける。接続先が別インスタンスでも状態を共有できるよう、各インスタンスが購読対象のFirestore更新を監視して通知する。接続中のメモリだけに担当者や作業状態を保持しない。Cloud Runのリクエスト期限による切断を前提に再接続を実装し、接続中の課金を含めて予算を確認する。[Cloud RunのWebSocket仕様](https://cloud.google.com/run/docs/triggering/websockets)
-- サービスアカウントをweb、generator、task呼出用に分ける。Vertex AI実行権限はgeneratorへ付与する。Google認証は実行環境のサービスアカウントで行い、鍵ファイルを置かない。
+- サービスアカウントをweb、generator、task呼出用に分ける。Vertex AIの動画解析・参考メモはgeneratorから呼び、採用する承認済み短文のTTSは第4節の承認処理を行うweb-apiから呼ぶ。実行する各サービスアカウントに対応するVertex AI実行権限を付与する。Google認証は実行環境のサービスアカウントで行い、鍵ファイルを置かない。
 - Cloud Buildでコンテナを作り、Artifact Registryに保存してCloud Runへデプロイする。Cloud LoggingにはrequestId、ジョブ状態、エラーコードだけを記録する。
 - Cloud Runのローカルディスクは動画処理の一時領域だけに使い、処理後に削除する。永続化先にしない。
 
