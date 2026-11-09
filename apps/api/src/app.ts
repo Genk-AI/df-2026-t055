@@ -224,6 +224,7 @@ export function createApp(options: {
                 }
                 inputSnapshot = improvementGuideInputSnapshotSchema.parse({ taskId: t.id, learnerId, sourceReleaseId: source.id,
                     sourceReleaseVersion: source.version, supportInputs: improvement.supportInputs, correctionRefs: [],
+                    preferences: { sentenceLength: learner.preferences.sentenceLength ?? 40, splitHints: learner.preferences.splitHints ?? '', audioGuidance: false },
                     displayMode: learner.preferences.displayMode ?? 'photo_text', confirmedGuidance: learner.confirmedGuidance ?? [] });
             }
             const d = doc(t.orgId, {

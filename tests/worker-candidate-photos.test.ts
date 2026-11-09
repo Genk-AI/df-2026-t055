@@ -124,7 +124,7 @@ test('improvement generation produces an editable draft without changing its sou
     h.db.put('releases', doc('demo', { id: 'source', taskId: 'task', learnerId: 'a', version: 1, learnerSteps: [{ order: 1, text: '作業', imageAltText: '写真', visibleCaution: '' }] }));
     const original = h.db.get('releases', 'source');
     h.db.put('drafts', { ...h.db.get('drafts', 'draft')!, jobId: 'job', sourceReleaseId: 'source', origin: 'improvement', displayMode: 'photo_text', audioGuidance: false, updatedBy: 'staff', appliedSupportRecordRefs: [], reviewChecks: { presentationConfirmed: false, flagResolution: '', steps: {} } });
-    h.db.put('generationJobs', { ...h.db.get('generationJobs', 'job')!, inputSnapshot: { taskId: 'task', learnerId: 'a', sourceReleaseId: 'source', sourceReleaseVersion: 1, supportInputs: [{ recordId: 'r', revision: 1, summary: '確認した要約' }], correctionRefs: [], displayMode: 'photo_text', confirmedGuidance: [] } });
+    h.db.put('generationJobs', { ...h.db.get('generationJobs', 'job')!, inputSnapshot: { taskId: 'task', learnerId: 'a', sourceReleaseId: 'source', sourceReleaseVersion: 1, supportInputs: [{ recordId: 'r', revision: 1, summary: '確認した要約' }], correctionRefs: [], preferences: { sentenceLength: 24, splitHints: '', audioGuidance: false }, displayMode: 'photo_text', confirmedGuidance: [] } });
     await h.run();
     assert.equal(h.db.get('generationJobs', 'job')!.status, 'succeeded');
     assert.deepEqual(h.db.get('releases', 'source'), original);

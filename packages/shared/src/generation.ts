@@ -40,7 +40,7 @@ export const improvementGuideInputSnapshotSchema = z.object({
     taskId: id, learnerId: id, sourceReleaseId: id, sourceReleaseVersion: z.number().int().min(1),
     supportInputs, correctionRefs: z.array(correctionRefSchema).max(20).refine(
         refs => new Set(refs.map(ref => ref.correctionId)).size === refs.length, 'Duplicate correctionId'
-    ), displayMode, confirmedGuidance
+    ), preferences: generationPreferencesSchema, displayMode, confirmedGuidance
 }).strict();
 const fields = ['text', 'visibleCaution', 'imageAltText', 'imageAssetId', 'sourceStartMs', 'sourceEndMs', 'frameMs', 'verifiedObservation', 'verifiedSpeech', 'coaching', 'completionCheck'] as const;
 const value = z.union([z.string().max(2000), z.number().finite()]);
