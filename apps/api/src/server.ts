@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { createApp } from './app.ts';
 import { MemoryRepository, seed } from './adapters.ts';
 import { createWorker } from '../../generator/src/worker.ts';
+import { configuredCorrectionModel } from '../../generator/src/correction-model.ts';
 import { configuredStorage } from './cloud-storage.ts';
 import { configuredQueue } from './cloud-tasks.ts';
 import { configuredRepository } from './firestore-repository.ts';
@@ -12,7 +13,7 @@ if (process.env.NODE_ENV === 'production')
 const db = configuredRepository(), storage = configuredStorage();
 if (db instanceof MemoryRepository) seed(db);
 const limit = Number(process.env.GENERATION_GLOBAL_LIMIT ?? 30);
-const runJob = createWorker(db, storage, configuredModel(process.env), limit);
+const runJob = createWorker(db, storage, configuredModel(process.env), limit, configuredCorrectionModel(process.env));
 const { app } = createApp({
     db, storage, globalLimit: limit, runJob, queue: configuredQueue()
 });

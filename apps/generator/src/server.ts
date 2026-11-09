@@ -4,6 +4,7 @@ import { configuredStorage } from '../../api/src/cloud-storage.ts';
 import { configuredQueue } from '../../api/src/cloud-tasks.ts';
 import { configuredModel } from './model.ts';
 import { createWorker } from './worker.ts';
+import { configuredCorrectionModel } from './correction-model.ts';
 import { createCloudHandler } from './cloud-handler.ts';
 
 if (process.env.GENERATOR_BACKEND === 'cloud') {
@@ -13,7 +14,7 @@ if (process.env.GENERATOR_BACKEND === 'cloud') {
     if (!queue) throw Error('CLOUD_TASKS_REQUIRED');
     const limit = Number(process.env.GENERATION_GLOBAL_LIMIT ?? 30);
     if (!Number.isInteger(limit) || limit < 0) throw Error('INVALID_GENERATION_GLOBAL_LIMIT');
-    const app = createCloudHandler({ db, queue, runJob: createWorker(db, storage, configuredModel(process.env), limit),
+    const app = createCloudHandler({ db, queue, runJob: createWorker(db, storage, configuredModel(process.env), limit, configuredCorrectionModel(process.env)),
         audience: process.env.GENERATOR_AUDIENCE ?? '', taskServiceAccount: process.env.TASKS_SERVICE_ACCOUNT_EMAIL ?? '',
         schedulerServiceAccount: process.env.SCHEDULER_SERVICE_ACCOUNT_EMAIL ?? '' });
     app.listen(Number(process.env.PORT ?? process.env.GENERATOR_PORT ?? 3002), process.env.LISTEN_HOST ?? '0.0.0.0');

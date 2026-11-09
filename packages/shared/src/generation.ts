@@ -42,8 +42,9 @@ export const improvementGuideInputSnapshotSchema = z.object({
         refs => new Set(refs.map(ref => ref.correctionId)).size === refs.length, 'Duplicate correctionId'
     ), preferences: generationPreferencesSchema, displayMode, confirmedGuidance
 }).strict();
-const fields = ['text', 'visibleCaution', 'imageAltText', 'imageAssetId', 'sourceStartMs', 'sourceEndMs', 'frameMs', 'verifiedObservation', 'verifiedSpeech', 'coaching', 'completionCheck'] as const;
-const value = z.union([z.string().max(2000), z.number().finite()]);
+const fields = ['text', 'visibleCaution', 'imageAltText', 'imageAssetId', 'sourceStartMs', 'sourceEndMs', 'frameMs', 'verifiedObservation', 'verifiedSpeech', 'coaching', 'completionCheck', 'position'] as const;
+// null represents an absent step or optional field; positions are zero-based.
+const value = z.union([z.string().max(2000), z.number().finite(), z.null()]);
 export const draftCorrectionChangeSchema = z.object({ stepId: id, field: z.enum(fields), before: value, after: value }).strict();
 export const correctionContextOutputSchema = z.object({
     editSummary: z.string().trim().min(1).max(500), nextDraftHint: z.string().trim().min(1).max(500),
@@ -51,7 +52,7 @@ export const correctionContextOutputSchema = z.object({
 }).strict();
 export const draftCorrectionSchema = z.object({
     schemaVersion: version, correctionId: id, taskId: id, learnerId: id, draftId: id, draftRevision: revision,
-    changes: z.array(draftCorrectionChangeSchema).min(1).max(220), reason: z.string().max(2000).optional(),
+    changes: z.array(draftCorrectionChangeSchema).min(1).max(480), reason: z.string().max(2000).optional(),
     createdBy: id, createdAt: z.iso.datetime(), contextJobId: id.optional(), contextSummary: correctionContextOutputSchema.optional()
 }).strict();
 export const draftCorrectionWithContextSchema = draftCorrectionSchema.extend({ contextJobStatus: status.optional() }).strict();

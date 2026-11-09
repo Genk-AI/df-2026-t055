@@ -172,6 +172,8 @@ Firestore Native modeに構造化データ、非公開Cloud Storageに動画・�
 | `draftCorrections` | `taskId, learnerId, draftId, draftRevision, changes:[{stepId,field,before,after}], reason?, createdBy, contextJobId?, contextSummary?` | 職員が保存した修正を記録する。修正前後の値はサーバーが確定し、履歴を保持する。要約結果はその履歴にだけ保存し、遅く完了した処理で新しい修正を上書きしない |
 | `handoverReads` | `releaseId, newcomerUid, readAt` | 承認版を読んだ記録 |
 
+修正履歴の工程追加・削除や未設定の項目は、存在しない側の値を `null` で表す。並替えはゼロ始まりの `position` の変更として記録する。工程は変更前後それぞれ最大20件のため、1回の保存に含む変更は最大480項目とする。確認チェックのみの変更は履歴に含めない。
+
 `generationJobs` は `kind: guide / correction_context` を持つ。`guide` は手順の下書き、`correction_context` は手直しの参考メモを生成する。受付時の設定と入力を固定する。手順の改善では元の承認版・選択した記録・使用する修正履歴の版も固定する。再試行は新ジョブ。
 
 `displayMode` は `photo_only`（写真のみ）または `photo_text`（写真と短文）。プロフィールで未確認なら項目を省略でき、下書きの初期値は `photo_text` とする。表示方法が保存されていない旧承認版も `photo_text` として扱い、読み上げは版に承認済み音声がある工程に限る。プロフィールを変更しても、既存の承認版や実行中の表示を変更しない。

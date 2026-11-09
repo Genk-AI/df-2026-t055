@@ -2,8 +2,9 @@ import { doc, now, type Repository, type Storage, type Doc } from '../../api/src
 import { media } from '../../api/src/media.ts';
 import type { EditedStep } from '../../../packages/shared/src/index.ts';
 import { validateProposal, type VideoModel } from './model.ts';
-import { improvementGuideInputSnapshotSchema } from '../../../packages/shared/src/generation.ts';
-export function createWorker(db: Repository, storage: Storage, model: VideoModel, globalLimit: number) {
+import { improvementGuideInputSnapshotSchema, correctionContextInputSnapshotSchema, correctionContextOutputSchema } from '../../../packages/shared/src/generation.ts';
+import { FakeCorrectionModel, type CorrectionModel } from './correction-model.ts';
+export function createWorker(db: Repository, storage: Storage, model: VideoModel, globalLimit: number, correctionModel: CorrectionModel = new FakeCorrectionModel()) {
     return async function run(jobId: string) {
         let token = '';
         let job = await db.get('generationJobs', jobId);
@@ -16,10 +17,12 @@ export function createWorker(db: Repository, storage: Storage, model: VideoModel
             if (['succeeded', 'failed'].includes(job.status)) return 'done';
             if (job.status === 'running' && job.leaseUntil > Date.now()) return 'busy';
             const jobs = await db.all('generationJobs');
-            if (job.attempt >= 3 || job.attempt > 0 && (jobs.reduce((n, j) => n + j.budgetUsed, 0) >= globalLimit || jobs.filter(j => j.taskId === job!.taskId).reduce((n, j) => n + j.budgetUsed, 0) >= 10)) {
+            if (job.attempt >= 3 || job.attempt > 0 && (jobs.reduce((n, j) => n + j.budgetUsed, 0) >= globalLimit || job.kind !== 'correction_context' && jobs.filter(j => j.taskId === job!.taskId && j.kind !== 'correction_context').reduce((n, j) => n + j.budgetUsed, 0) >= 10)) {
                 await db.put('generationJobs', { ...job, status: 'failed', errorCode: 'ATTEMPT_LIMIT' });
-                const d = (await db.get('drafts', job.draftId))!;
-                await db.put('drafts', { ...d, status: 'failed' });
+                if (job.kind !== 'correction_context') {
+                    const d = (await db.get('drafts', job.draftId))!;
+                    await db.put('drafts', { ...d, status: 'failed' });
+                }
                 return 'done';
             }
             token = crypto.randomUUID();
@@ -33,6 +36,26 @@ export function createWorker(db: Repository, storage: Storage, model: VideoModel
         const started = Date.now();
         let errorCode = 'GENERATION_FAILED';
         try {
+            if (job.kind === 'correction_context') {
+                const snapshot = correctionContextInputSnapshotSchema.parse(job.inputSnapshot);
+                const controller = new AbortController();
+                let timeout: ReturnType<typeof setTimeout> | undefined;
+                errorCode = 'MODEL_CALL_FAILED';
+                const generated = await Promise.race([correctionModel.generate({ title: snapshot.title,
+                    changes: snapshot.changes.map(c => ({ field: c.field, before: c.before, after: c.after })) }, controller.signal),
+                    new Promise<never>((_, reject) => { timeout = setTimeout(() => { errorCode = 'MODEL_TIMEOUT'; controller.abort(); reject(Error('MODEL_TIMEOUT')); }, 120000); })]).finally(() => clearTimeout(timeout));
+                errorCode = 'MODEL_OUTPUT_INVALID';
+                const summary = correctionContextOutputSchema.parse(generated);
+                await db.transaction(async () => {
+                    const current = await db.get('generationJobs', jobId);
+                    if (!current || current.leaseToken !== token || current.status !== 'running') return;
+                    const correction = await db.get('draftCorrections', snapshot.correctionId);
+                    if (!correction || correction.orgId !== current.orgId || correction.contextJobId !== current.id || correction.draftRevision !== snapshot.draftRevision) throw Error('CORRECTION_CHANGED');
+                    await db.put('draftCorrections', { ...correction, contextSummary: summary });
+                    await db.put('generationJobs', { ...current, status: 'succeeded', finishedAt: now(), durationMs: Date.now() - started });
+                });
+                return;
+            }
             const d = (await db.get('drafts', job.draftId))!, t = (await db.get('tasks', job.taskId))!, v = (await db.get('assets', t.videoAssetId))!, l = (await db.get('learners', d.learnerId))!;
             let improvement: import('./model.ts').ModelInput['improvement'];
             let displayMode = d.displayMode ?? 'photo_text';
@@ -107,8 +130,10 @@ export function createWorker(db: Repository, storage: Storage, model: VideoModel
                 await db.put('generationJobs', {
                     ...current, status: 'failed', errorCode, finishedAt: now(), durationMs: Date.now() - started
                 });
-                const d = (await db.get('drafts', current.draftId))!;
-                await db.put('drafts', { ...d, status: 'failed' });
+                if (current.kind !== 'correction_context') {
+                    const d = (await db.get('drafts', current.draftId))!;
+                    await db.put('drafts', { ...d, status: 'failed' });
+                }
             });
         }
     };

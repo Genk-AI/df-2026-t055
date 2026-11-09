@@ -36,7 +36,7 @@ Geminiへは初回に動画URI、作業名、完成基準、動画時間、許�
 
 `GET /api/v1/learners/{learnerId}/work-guides/{taskId}/corrections` は同じ所属の職員に [履歴一覧](../fixtures/generation/corrections-list-valid.json) を返す。空なら `{corrections:[]}` とする。[手直し履歴](../fixtures/generation/draft-correction-valid.json) の修正前後と任意の理由はサーバーが保存し、参考メモの `editSummary`（変更事実）と `nextDraftHint`（AIの提案）を分ける。
 
-履歴保存は編集保存と同時に行う。保存できなかった修正や確認欄だけの変更からは履歴を作らない。`draftRevision` は0以上の整数、`changes` は1..220件、各値は最大2000文字の文字列か有限の数とする。`field` は `text / visibleCaution / imageAltText / imageAssetId / sourceStartMs / sourceEndMs / frameMs / verifiedObservation / verifiedSpeech / coaching / completionCheck` に限る。
+履歴保存は編集保存と同時に行う。保存できなかった修正や確認欄だけの変更からは履歴を作らない。`draftRevision` は0以上の整数、`changes` は1..480件、各値は最大2000文字の文字列、有限の数、または項目・工程が存在しないことを表す `null` とする。`field` は `text / visibleCaution / imageAltText / imageAssetId / sourceStartMs / sourceEndMs / frameMs / verifiedObservation / verifiedSpeech / coaching / completionCheck / position` に限る。`position` はゼロ始まりの工程位置を示す。
 
 ## 内部の参考メモ受付
 
