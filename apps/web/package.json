@@ -1,1 +1,13 @@
-{"name":"@t055/web","private":true,"type":"module","scripts":{"dev":"vite --host 127.0.0.1","build":"vite build"},"dependencies":{"@firebase/app":"^0.16.5","@firebase/auth":"^1.13.9"}}
+{
+  "name": "@t055/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@firebase/app": "^0.16.5",
+    "@firebase/auth": "^1.13.9"
+  }
+}

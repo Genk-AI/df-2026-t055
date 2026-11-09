@@ -11,7 +11,5 @@
     "audioGuidance": false
   },
   "displayMode": "photo_text",
-  "confirmedGuidance": [
-    "目印を具体的に示す"
-  ]
+  "confirmedGuidance": ["目印を具体的に示す"]
 }

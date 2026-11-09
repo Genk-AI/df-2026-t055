@@ -2,14 +2,21 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 const [api, generator, fixture] = process.argv.slice(2);
-assert.ok(api && generator && fixture, 'usage: node scripts/check-container-http.mjs API_URL GENERATOR_URL FIXTURE.mp4');
+assert.ok(
+  api && generator && fixture,
+  'usage: node scripts/check-container-http.mjs API_URL GENERATOR_URL FIXTURE.mp4',
+);
 const token = process.env.INTERNAL_TOKEN;
 assert.ok(token, 'INTERNAL_TOKEN is required');
 async function request(base, path, { method = 'GET', body, auth = 'staff' } = {}) {
   const response = await fetch(base + path, {
-    method, signal: AbortSignal.timeout(60000),
-    headers: { authorization: `Bearer ${auth}`, ...(body instanceof FormData ? {} : { 'content-type': 'application/json' }) },
-    ...(body === undefined ? {} : { body: body instanceof FormData ? body : JSON.stringify(body) })
+    method,
+    signal: AbortSignal.timeout(60000),
+    headers: {
+      authorization: `Bearer ${auth}`,
+      ...(body instanceof FormData ? {} : { 'content-type': 'application/json' }),
+    },
+    ...(body === undefined ? {} : { body: body instanceof FormData ? body : JSON.stringify(body) }),
   });
   return response;
 }
@@ -29,13 +36,32 @@ for (const path of ['/staff', '/me', '/handover']) {
   assert.equal(await (await fetch(api + path)).text(), html);
 }
 assert.equal((await request(api, '/api/v1/tasks', { auth: 'invalid' })).status, 401);
-const { taskId } = await json('/tasks', { method: 'POST', body: { title: 'container synthetic fixture' } });
+const { taskId } = await json('/tasks', {
+  method: 'POST',
+  body: { title: 'container synthetic fixture' },
+});
 const form = new FormData();
 form.append('video', new Blob([await readFile(fixture)], { type: 'video/mp4' }), 'fixture.mp4');
 await json(`/tasks/${taskId}/video`, { method: 'POST', body: form });
-const { jobId, draftId } = await json(`/tasks/${taskId}/generations`, { method: 'POST', body: { learnerId: 'a' } });
-assert.equal((await request(generator, '/api/v1/internal/generate', { method: 'POST', auth: 'invalid', body: { jobId } })).status, 403);
-const generated = await request(generator, '/api/v1/internal/generate', { method: 'POST', auth: token, body: { jobId } });
+const { jobId, draftId } = await json(`/tasks/${taskId}/generations`, {
+  method: 'POST',
+  body: { learnerId: 'a' },
+});
+assert.equal(
+  (
+    await request(generator, '/api/v1/internal/generate', {
+      method: 'POST',
+      auth: 'invalid',
+      body: { jobId },
+    })
+  ).status,
+  403,
+);
+const generated = await request(generator, '/api/v1/internal/generate', {
+  method: 'POST',
+  auth: token,
+  body: { jobId },
+});
 assert.equal(generated.status, 200);
 const job = await json(`/jobs/${jobId}`);
 assert.equal(job.status, 'succeeded', `job state/error: ${JSON.stringify(job)}`);
@@ -50,4 +76,6 @@ for (const step of draft.editedSteps) {
   assert.ok((await image.arrayBuffer()).byteLength > 0);
 }
 assert.equal((await request(api, `/api/v1/drafts/${draftId}`, { auth: 'learner-a' })).status, 403);
-console.log('PASS: same-origin Web/API, auth rejection, generator HTTP, succeeded job, candidate JPEGs, draft boundary');
+console.log(
+  'PASS: same-origin Web/API, auth rejection, generator HTTP, succeeded job, candidate JPEGs, draft boundary',
+);

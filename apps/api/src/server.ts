@@ -9,15 +9,28 @@ import { configuredQueue } from './cloud-tasks.ts';
 import { configuredRepository } from './firestore-repository.ts';
 import { configuredModel } from '../../generator/src/model.ts';
 if (process.env.NODE_ENV === 'production')
-    throw Error('Install production Auth/Repository/Storage/Queue/OIDC adapters before deployment');
-const db = configuredRepository(), storage = configuredStorage();
+  throw Error('Install production Auth/Repository/Storage/Queue/OIDC adapters before deployment');
+const db = configuredRepository(),
+  storage = configuredStorage();
 if (db instanceof MemoryRepository) seed(db);
 const limit = Number(process.env.GENERATION_GLOBAL_LIMIT ?? 30);
-const runJob = createWorker(db, storage, configuredModel(process.env), limit, configuredCorrectionModel(process.env));
+const runJob = createWorker(
+  db,
+  storage,
+  configuredModel(process.env),
+  limit,
+  configuredCorrectionModel(process.env),
+);
 const { app } = createApp({
-    db, storage, globalLimit: limit, runJob, queue: configuredQueue()
+  db,
+  storage,
+  globalLimit: limit,
+  runJob,
+  queue: configuredQueue(),
 });
 app.get('/', (_req, res) => res.sendFile(resolve('apps/web/dist/index.html')));
 app.use(http.static(resolve('apps/web/dist')));
-app.get(/^\/(staff|me|handover)(\/.*)?$/, (_req, res) => res.sendFile(resolve('apps/web/dist/index.html')));
+app.get(/^\/(staff|me|handover)(\/.*)?$/, (_req, res) =>
+  res.sendFile(resolve('apps/web/dist/index.html')),
+);
 app.listen(Number(process.env.API_PORT ?? 3001), process.env.LISTEN_HOST ?? '127.0.0.1');

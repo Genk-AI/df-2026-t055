@@ -1,1 +1,6 @@
-{"name":"@t055/shared","version":"0.1.0","type":"module","exports":"./src/index.ts"}
+{
+  "name": "@t055/shared",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": "./src/index.ts"
+}

@@ -11,9 +11,7 @@
       "instructionDraft": "タオルを ひろげます",
       "coachingDraft": "手を動かす前に待ち、必要なところで声をかける",
       "completionCheckDraft": "原動画の完成見本と照合する",
-      "reviewFlags": [
-        "開発用候補。実際の動作・原音と照合が必要"
-      ]
+      "reviewFlags": ["開発用候補。実際の動作・原音と照合が必要"]
     },
     {
       "stepId": "s02",
@@ -25,9 +23,7 @@
       "instructionDraft": "はんぶんに おります",
       "coachingDraft": "手を動かす前に待ち、必要なところで声をかける",
       "completionCheckDraft": "原動画の完成見本と照合する",
-      "reviewFlags": [
-        "開発用候補。実際の動作・原音と照合が必要"
-      ]
+      "reviewFlags": ["開発用候補。実際の動作・原音と照合が必要"]
     },
     {
       "stepId": "s03",
@@ -39,9 +35,7 @@
       "instructionDraft": "もういちど おります",
       "coachingDraft": "手を動かす前に待ち、必要なところで声をかける",
       "completionCheckDraft": "原動画の完成見本と照合する",
-      "reviewFlags": [
-        "開発用候補。実際の動作・原音と照合が必要"
-      ]
+      "reviewFlags": ["開発用候補。実際の動作・原音と照合が必要"]
     },
     {
       "stepId": "s04",
@@ -53,9 +47,7 @@
       "instructionDraft": "かみの まんなかに おきます",
       "coachingDraft": "手を動かす前に待ち、必要なところで声をかける",
       "completionCheckDraft": "原動画の完成見本と照合する",
-      "reviewFlags": [
-        "開発用候補。実際の動作・原音と照合が必要"
-      ]
+      "reviewFlags": ["開発用候補。実際の動作・原音と照合が必要"]
     },
     {
       "stepId": "s05",
@@ -67,9 +59,7 @@
       "instructionDraft": "かみを おさえて まきます",
       "coachingDraft": "手を動かす前に待ち、必要なところで声をかける",
       "completionCheckDraft": "原動画の完成見本と照合する",
-      "reviewFlags": [
-        "開発用候補。実際の動作・原音と照合が必要"
-      ]
+      "reviewFlags": ["開発用候補。実際の動作・原音と照合が必要"]
     },
     {
       "stepId": "s06",
@@ -81,9 +71,7 @@
       "instructionDraft": "ふくろを ひらいて いれます",
       "coachingDraft": "手を動かす前に待ち、必要なところで声をかける",
       "completionCheckDraft": "原動画の完成見本と照合する",
-      "reviewFlags": [
-        "開発用候補。実際の動作・原音と照合が必要"
-      ]
+      "reviewFlags": ["開発用候補。実際の動作・原音と照合が必要"]
     },
     {
       "stepId": "s07",
@@ -95,9 +83,7 @@
       "instructionDraft": "かみと ふくろを ととのえます",
       "coachingDraft": "手を動かす前に待ち、必要なところで声をかける",
       "completionCheckDraft": "原動画の完成見本と照合する",
-      "reviewFlags": [
-        "開発用候補。実際の動作・原音と照合が必要"
-      ]
+      "reviewFlags": ["開発用候補。実際の動作・原音と照合が必要"]
     },
     {
       "stepId": "s08",
@@ -109,9 +95,7 @@
       "instructionDraft": "ふくろを おって テープを はります",
       "coachingDraft": "手を動かす前に待ち、必要なところで声をかける",
       "completionCheckDraft": "原動画の完成見本と照合する",
-      "reviewFlags": [
-        "開発用候補。実際の動作・原音と照合が必要"
-      ]
+      "reviewFlags": ["開発用候補。実際の動作・原音と照合が必要"]
     },
     {
       "stepId": "s09",
@@ -123,12 +107,8 @@
       "instructionDraft": "みほんと くらべます",
       "coachingDraft": "手を動かす前に待ち、必要なところで声をかける",
       "completionCheckDraft": "原動画の完成見本と照合する",
-      "reviewFlags": [
-        "開発用候補。実際の動作・原音と照合が必要"
-      ]
+      "reviewFlags": ["開発用候補。実際の動作・原音と照合が必要"]
     }
   ],
-  "reviewFlags": [
-    "Fake実装。実モデルによる解析結果ではありません"
-  ]
+  "reviewFlags": ["Fake実装。実モデルによる解析結果ではありません"]
 }

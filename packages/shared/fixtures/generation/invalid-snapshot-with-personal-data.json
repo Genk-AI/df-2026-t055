@@ -11,9 +11,7 @@
     "audioGuidance": false
   },
   "displayMode": "photo_text",
-  "confirmedGuidance": [
-    "目印を具体的に示す"
-  ],
+  "confirmedGuidance": ["目印を具体的に示す"],
   "displayName": "架空の表示名",
   "diagnosis": "架空の診断情報"
 }

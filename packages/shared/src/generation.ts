@@ -11,69 +11,190 @@ const confirmedGuidance = z.array(z.string().trim().min(1).max(500)).max(20);
 export const generationRequestSchema = z.object({ learnerId: id }).strict();
 export const initialGenerationRequestSchema = generationRequestSchema;
 // ponytail: Free text requires staff privacy review; add automated screening if it is accepted without that review.
-export const supportInputSchema = z.object({
-    recordId: id, revision: z.number().int().min(1), summary: z.string().trim().min(1).max(2000)
-}).strict();
-const supportInputs = z.array(supportInputSchema).min(1).refine(
-    inputs => new Set(inputs.map(input => input.recordId)).size === inputs.length,
-    'Duplicate recordId'
-);
-export const improvementRetryInputSchema = z.object({ learnerId: id, sourceReleaseId: id, supportInputs }).strict();
-export const improvementGenerationRequestSchema = improvementRetryInputSchema.extend({ clientRequestId: id.max(100) }).strict();
+export const supportInputSchema = z
+  .object({
+    recordId: id,
+    revision: z.number().int().min(1),
+    summary: z.string().trim().min(1).max(2000),
+  })
+  .strict();
+const supportInputs = z
+  .array(supportInputSchema)
+  .min(1)
+  .refine(
+    (inputs) => new Set(inputs.map((input) => input.recordId)).size === inputs.length,
+    'Duplicate recordId',
+  );
+export const improvementRetryInputSchema = z
+  .object({ learnerId: id, sourceReleaseId: id, supportInputs })
+  .strict();
+export const improvementGenerationRequestSchema = improvementRetryInputSchema
+  .extend({ clientRequestId: id.max(100) })
+  .strict();
 // The legacy initial request has no tag; strict shapes distinguish it from improvements.
-export const guideGenerationRequestSchema = z.union([initialGenerationRequestSchema, improvementGenerationRequestSchema]);
-export const generationCreateResponseSchema = z.object({ schemaVersion: version, jobId: id, draftId: id }).strict();
-export const generationJobStatusSchema = generationCreateResponseSchema.extend({
-    kind: z.enum(['guide', 'correction_context']), status, errorCode, retryInput: improvementRetryInputSchema.optional()
-}).strict();
-export const generationPreferencesSchema = z.object({
-    sentenceLength: z.number().int().min(1).max(40), splitHints: z.string().max(200), audioGuidance: z.boolean()
-}).strict();
-export const frozenCorrectionSchema = z.object({
-    correctionId: id, draftRevision: revision,
-    changes: z.array(z.object({ stepId: id, field: z.enum(['text', 'imageAltText', 'visibleCaution']), before: z.string().max(2000), after: z.string().max(2000) }).strict()).min(1),
-    contextSummary: z.lazy(() => correctionContextOutputSchema).optional()
-}).strict();
-export const initialGuideInputSnapshotSchema = z.object({
-    taskId: id, learnerId: id, videoAssetId: id, title: id,
-    completionCriteria: z.string().max(2000), durationMs: revision,
-    preferences: generationPreferencesSchema, displayMode, confirmedGuidance,
-    correctionInputs: z.array(frozenCorrectionSchema).max(20).optional()
-}).strict();
+export const guideGenerationRequestSchema = z.union([
+  initialGenerationRequestSchema,
+  improvementGenerationRequestSchema,
+]);
+export const generationCreateResponseSchema = z
+  .object({ schemaVersion: version, jobId: id, draftId: id })
+  .strict();
+export const generationJobStatusSchema = generationCreateResponseSchema
+  .extend({
+    kind: z.enum(['guide', 'correction_context']),
+    status,
+    errorCode,
+    retryInput: improvementRetryInputSchema.optional(),
+  })
+  .strict();
+export const generationPreferencesSchema = z
+  .object({
+    sentenceLength: z.number().int().min(1).max(40),
+    splitHints: z.string().max(200),
+    audioGuidance: z.boolean(),
+  })
+  .strict();
+export const frozenCorrectionSchema = z
+  .object({
+    correctionId: id,
+    draftRevision: revision,
+    changes: z
+      .array(
+        z
+          .object({
+            stepId: id,
+            field: z.enum(['text', 'imageAltText', 'visibleCaution']),
+            before: z.string().max(2000),
+            after: z.string().max(2000),
+          })
+          .strict(),
+      )
+      .min(1),
+    contextSummary: z.lazy(() => correctionContextOutputSchema).optional(),
+  })
+  .strict();
+export const initialGuideInputSnapshotSchema = z
+  .object({
+    taskId: id,
+    learnerId: id,
+    videoAssetId: id,
+    title: id,
+    completionCriteria: z.string().max(2000),
+    durationMs: revision,
+    preferences: generationPreferencesSchema,
+    displayMode,
+    confirmedGuidance,
+    correctionInputs: z.array(frozenCorrectionSchema).max(20).optional(),
+  })
+  .strict();
 export const correctionRefSchema = z.object({ correctionId: id, draftRevision: revision }).strict();
-export const improvementGuideInputSnapshotSchema = z.object({
-    taskId: id, learnerId: id, sourceReleaseId: id, sourceReleaseVersion: z.number().int().min(1),
-    supportInputs, correctionRefs: z.array(correctionRefSchema).max(20).refine(
-        refs => new Set(refs.map(ref => ref.correctionId)).size === refs.length, 'Duplicate correctionId'
-    ), preferences: generationPreferencesSchema, displayMode, confirmedGuidance, correctionInputs: z.array(frozenCorrectionSchema).max(20).optional()
-}).strict();
-const fields = ['text', 'visibleCaution', 'imageAltText', 'imageAssetId', 'sourceStartMs', 'sourceEndMs', 'frameMs', 'verifiedObservation', 'verifiedSpeech', 'coaching', 'completionCheck', 'position'] as const;
+export const improvementGuideInputSnapshotSchema = z
+  .object({
+    taskId: id,
+    learnerId: id,
+    sourceReleaseId: id,
+    sourceReleaseVersion: z.number().int().min(1),
+    supportInputs,
+    correctionRefs: z
+      .array(correctionRefSchema)
+      .max(20)
+      .refine(
+        (refs) => new Set(refs.map((ref) => ref.correctionId)).size === refs.length,
+        'Duplicate correctionId',
+      ),
+    preferences: generationPreferencesSchema,
+    displayMode,
+    confirmedGuidance,
+    correctionInputs: z.array(frozenCorrectionSchema).max(20).optional(),
+  })
+  .strict();
+const fields = [
+  'text',
+  'visibleCaution',
+  'imageAltText',
+  'imageAssetId',
+  'sourceStartMs',
+  'sourceEndMs',
+  'frameMs',
+  'verifiedObservation',
+  'verifiedSpeech',
+  'coaching',
+  'completionCheck',
+  'position',
+] as const;
 // null represents an absent step or optional field; positions are zero-based.
 const value = z.union([z.string().max(2000), z.number().finite(), z.null()]);
-export const draftCorrectionChangeSchema = z.object({ stepId: id, field: z.enum(fields), before: value, after: value }).strict();
-export const correctionContextOutputSchema = z.object({
-    editSummary: z.string().trim().min(1).max(500), nextDraftHint: z.string().trim().min(1).max(500),
-    reviewFlags: z.array(z.string().trim().min(1).max(100)).max(10)
-}).strict();
-export const draftCorrectionSchema = z.object({
-    schemaVersion: version, correctionId: id, taskId: id, learnerId: id, draftId: id, draftRevision: revision,
-    changes: z.array(draftCorrectionChangeSchema).min(1).max(480), reason: z.string().max(2000).optional(),
-    createdBy: id, createdAt: z.iso.datetime(), contextJobId: id.optional(), contextSummary: correctionContextOutputSchema.optional()
-}).strict();
-export const draftCorrectionWithContextSchema = draftCorrectionSchema.extend({ contextJobStatus: status.optional() }).strict();
-export const correctionsListResponseSchema = z.object({ corrections: z.array(draftCorrectionWithContextSchema) }).strict();
-export const correctionContextChangeSchema = z.object({
-    stepId: id, field: z.enum(['text', 'imageAltText', 'visibleCaution']),
-    before: z.string().max(2000), after: z.string().max(2000)
-}).strict();
-export const correctionContextInputSnapshotSchema = z.object({
-    correctionId: id, draftRevision: revision, title: id, changes: z.array(correctionContextChangeSchema).min(1)
-}).strict();
+export const draftCorrectionChangeSchema = z
+  .object({ stepId: id, field: z.enum(fields), before: value, after: value })
+  .strict();
+export const correctionContextOutputSchema = z
+  .object({
+    editSummary: z.string().trim().min(1).max(500),
+    nextDraftHint: z.string().trim().min(1).max(500),
+    reviewFlags: z.array(z.string().trim().min(1).max(100)).max(10),
+  })
+  .strict();
+export const draftCorrectionSchema = z
+  .object({
+    schemaVersion: version,
+    correctionId: id,
+    taskId: id,
+    learnerId: id,
+    draftId: id,
+    draftRevision: revision,
+    changes: z.array(draftCorrectionChangeSchema).min(1).max(480),
+    reason: z.string().max(2000).optional(),
+    createdBy: id,
+    createdAt: z.iso.datetime(),
+    contextJobId: id.optional(),
+    contextSummary: correctionContextOutputSchema.optional(),
+  })
+  .strict();
+export const draftCorrectionWithContextSchema = draftCorrectionSchema
+  .extend({ contextJobStatus: status.optional() })
+  .strict();
+export const correctionsListResponseSchema = z
+  .object({ corrections: z.array(draftCorrectionWithContextSchema) })
+  .strict();
+export const correctionContextChangeSchema = z
+  .object({
+    stepId: id,
+    field: z.enum(['text', 'imageAltText', 'visibleCaution']),
+    before: z.string().max(2000),
+    after: z.string().max(2000),
+  })
+  .strict();
+export const correctionContextInputSnapshotSchema = z
+  .object({
+    correctionId: id,
+    draftRevision: revision,
+    title: id,
+    changes: z.array(correctionContextChangeSchema).min(1),
+  })
+  .strict();
 const job = generationCreateResponseSchema.extend({
-    taskId: id, status, attempt: z.number().int().min(0).max(3), modelId: id, promptVersion: id,
-    errorCode, leaseUntil: revision.optional()
+  taskId: id,
+  status,
+  attempt: z.number().int().min(0).max(3),
+  modelId: id,
+  promptVersion: id,
+  errorCode,
+  leaseUntil: revision.optional(),
 });
 export const generationJobSchema = z.discriminatedUnion('kind', [
-    job.extend({ kind: z.literal('guide'), inputSnapshot: z.union([initialGuideInputSnapshotSchema, improvementGuideInputSnapshotSchema]) }).strict(),
-    job.extend({ kind: z.literal('correction_context'), inputSnapshot: correctionContextInputSnapshotSchema }).strict()
+  job
+    .extend({
+      kind: z.literal('guide'),
+      inputSnapshot: z.union([
+        initialGuideInputSnapshotSchema,
+        improvementGuideInputSnapshotSchema,
+      ]),
+    })
+    .strict(),
+  job
+    .extend({
+      kind: z.literal('correction_context'),
+      inputSnapshot: correctionContextInputSnapshotSchema,
+    })
+    .strict(),
 ]);
