@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { learnerProfileDetailSchema, learnerProfileListResponseSchema, type LearnerProfileUpdateRequest, type LearnerProfileCreateRequest, type LearnerProfileDetail, type LearnerProfileSummary } from '../../../packages/shared/src/learner-profile.ts';
 import { buildLearnerProfileUpdate, learnerProfileToForm, buildLearnerProfile, emptyLearnerForm, type LearnerForm, type NoteKey } from './learner-form.ts';
+import { StaffWorkGuides } from './staff-work-guides.tsx';
 
 const notes: [NoteKey, string][] = [['learnerWishes', '本人希望'], ['staffObservations', '職員による観察'], ['staffSuggestions', '職員による提案'], ['confirmedGuidance', '確認済みの配慮']];
 export function ProfileValues({ profile }: { profile: LearnerProfileCreateRequest | LearnerProfileUpdateRequest }) {
@@ -67,7 +68,7 @@ export function StaffLearners({ path, api, go }: { path: string; api: (path: str
                 {(!isEdit || form.disabilityAction === 'replace') && <><label>詳細<input maxLength={500} required={!!(form.disabilitySource || form.disabilityConfirmedAt)} {...field('disabilityDetail')}/></label>
                 <label>出典<input maxLength={200} required={!!(form.disabilityDetail || form.disabilityConfirmedAt)} {...field('disabilitySource')}/></label>
                 <label>確認日時（端末の現地時刻）<input type="datetime-local" step="any" required={!!(form.disabilityDetail || form.disabilitySource)} {...field('disabilityConfirmedAt')}/></label></>}
-            </fieldset><button type="submit" disabled={busy || conflict}>{isEdit ? '更新内容を確認する' : '登録内容を確認する'}</button></form> : loading ? <p role="status">読み込み中です</p> : detail ? <><ProfileValues profile={detail}/><button onClick={() => go(`/staff/learners/${id}/edit`)}>プロフィールを編集する</button></> : <><button onClick={() => go('/staff/learners/new')}>本人を登録する</button>{items.length ? <ul>{items.map(item => <li key={item.learnerId}><button onClick={() => go(`/staff/learners/${encodeURIComponent(item.learnerId)}`)}>{item.displayName}の詳細</button></li>)}</ul> : !error && <p>登録された本人はいません。</p>}</>}
+            </fieldset><button type="submit" disabled={busy || conflict}>{isEdit ? '更新内容を確認する' : '登録内容を確認する'}</button></form> : loading ? <p role="status">読み込み中です</p> : detail ? <><ProfileValues profile={detail}/><button onClick={() => go(`/staff/learners/${id}/edit`)}>プロフィールを編集する</button><StaffWorkGuides learnerId={detail.learnerId} api={api} go={go}/></> : <><button onClick={() => go('/staff/learners/new')}>本人を登録する</button>{items.length ? <ul>{items.map(item => <li key={item.learnerId}><button onClick={() => go(`/staff/learners/${encodeURIComponent(item.learnerId)}`)}>{item.displayName}の詳細</button></li>)}</ul> : !error && <p>登録された本人はいません。</p>}</>}
         <button disabled={busy} onClick={() => go('/staff/learners')}>本人一覧へ戻る</button>
     </section>;
 }

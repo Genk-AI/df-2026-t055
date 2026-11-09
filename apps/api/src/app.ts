@@ -7,6 +7,7 @@ import { releaseCopyRequestSchema, releaseCopyResponseSchema, draftDetailSchema,
 import { learnerProfileCreateRequestSchema, learnerProfileUpdateRequestSchema, learnerProfileDetailSchema, learnerProfileListResponseSchema, toLearnerProfileSummary } from '../../../packages/shared/src/learner-profile.ts';
 import { supportResumeRequestSchema, supportResumeResponseSchema, supportRecordSchema, supportRecordSaveRequestSchema, supportOperationRequestSchema, supportStartResponseSchema, supportAcknowledgeResponseSchema, supportClaimResponseSchema, supportRequestListResponseSchema, supportRequestStatusQuerySchema } from '../../../packages/shared/src/support.ts';
 import { draftCorrectionSchema, correctionsListResponseSchema } from '../../../packages/shared/src/generation.ts';
+import { workGuideListResponseSchema, workGuideRecordsResponseSchema } from '../../../packages/shared/src/work-guides.ts';
 import { MemoryRepository, seed, doc, id, now, type Repository, type Storage, type Auth, type Doc } from './adapters.ts';
 import { configuredAuth } from './firebase-auth.ts';
 import { configuredStorage } from './cloud-storage.ts';
@@ -17,7 +18,7 @@ import type { GenerationQueue } from './cloud-tasks.ts';
 import { generationEnabled } from './generation-control.ts';
 import { frozenCorrections } from './correction-input.ts';
 import { nextCorrectionSequence } from './correction-order.ts';
-import { guideGenerationRequestSchema, improvementGuideInputSnapshotSchema, initialGuideInputSnapshotSchema, correctionContextInputSnapshotSchema } from '../../../packages/shared/src/generation.ts';
+import { guideGenerationRequestSchema, improvementGuideInputSnapshotSchema, initialGuideInputSnapshotSchema, correctionContextInputSnapshotSchema, improvementRetryInputSchema } from '../../../packages/shared/src/generation.ts';
 export class HttpError extends Error {
     constructor(public status: number, public code: string) {
         super(code);
@@ -113,6 +114,68 @@ export function createApp(options: {
     const list = async (c: string, res: Response) => (await db.all(c)).filter(x => x.orgId === member(res).orgId);
     const send = (res: Response, data: object, status = 200) => res.status(status).json({ schemaVersion: '1', ...data });
     const staff = (res: Response) => role(res, 'staff');
+    // Only records explicitly adopted in the assigned release or its ancestors count as applied.
+    async function workGuideData(learnerId: string, res: Response) {
+        await get('learners', learnerId, res);
+        const [tasks, assignments, releases, drafts, jobs, records] = await Promise.all(
+            ['tasks', 'assignments', 'releases', 'drafts', 'generationJobs', 'supportRecords'].map(c => list(c, res))
+        );
+        const byRelease = new Map(releases.map(release => [release.id, release]));
+        const appliedFor = (taskId: string) => {
+            const assignment = assignments.find(a => a.learnerId === learnerId && a.taskId === taskId);
+            const applied = new Set<string>(), visited = new Set<string>();
+            let next = assignment?.releaseId;
+            let assigned: Doc | undefined;
+            while (next) {
+                if (visited.has(next)) fail(409, 'RELEASE_LINEAGE_INVALID');
+                visited.add(next);
+                const release = byRelease.get(next);
+                if (!release || release.learnerId !== learnerId || release.taskId !== taskId) fail(409, 'RELEASE_LINEAGE_INVALID');
+                if (!assigned) assigned = release;
+                for (const ref of release.appliedSupportRecordRefs ?? []) applied.add(JSON.stringify([ref.recordId, ref.revision]));
+                next = release.sourceReleaseId;
+            }
+            return { applied, assigned };
+        };
+        return { tasks, assignments, releases, drafts, jobs, records, appliedFor };
+    }
+    const newest = (a: Doc, b: Doc) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id);
+    api.get('/learners/:learnerId/work-guides', async (req, res) => {
+        staff(res);
+        const learnerId = req.params.learnerId;
+        const result = await db.transaction(async () => {
+            const data = await workGuideData(learnerId, res);
+            const learnerDrafts = data.drafts.filter(d => d.learnerId === learnerId);
+            const learnerRecords = data.records.filter(r => r.learnerId === learnerId);
+            const taskIds = new Set([...data.assignments.filter(a => a.learnerId === learnerId), ...learnerDrafts, ...learnerRecords].map(item => item.taskId));
+            return [...taskIds].map(taskId => {
+                const task = data.tasks.find(t => t.id === taskId);
+                if (!task) fail(409, 'WORK_GUIDE_TASK_MISSING');
+                const { applied, assigned } = data.appliedFor(taskId);
+                const drafts = learnerDrafts.filter(d => d.taskId === taskId).sort(newest);
+                const draft = drafts[0];
+                const draftIds = new Set(drafts.map(d => d.id));
+                const job = data.jobs.filter(j => draftIds.has(j.draftId) && (!j.kind || j.kind === 'guide')).sort(newest)[0];
+                return { taskId, title: task.title, assignment: assigned ? { releaseId: assigned.id, version: assigned.version } : null,
+                    unappliedCount: learnerRecords.filter(r => r.taskId === taskId && !applied.has(JSON.stringify([r.id, r.revision]))).length,
+                    latestDraft: draft ? { draftId: draft.id, status: draft.status, revision: draft.revision } : null,
+                    latestGeneration: job ? { jobId: job.id, status: job.status } : null };
+            }).sort((a, b) => a.taskId.localeCompare(b.taskId));
+        });
+        res.json(workGuideListResponseSchema.parse({ schemaVersion: '1', items: result }));
+    });
+    api.get('/learners/:learnerId/work-guides/:taskId/support-records', async (req, res) => {
+        staff(res);
+        const result = await db.transaction(async () => {
+            const data = await workGuideData(req.params.learnerId, res);
+            if (!data.tasks.some(t => t.id === req.params.taskId)) fail(404, 'NOT_FOUND');
+            const { applied } = data.appliedFor(req.params.taskId);
+            return data.records.filter(r => r.learnerId === req.params.learnerId && r.taskId === req.params.taskId).sort(newest).map(({ id, orgId, ...r }) => ({
+                ...r, schemaVersion: '1', recordId: id, applied: applied.has(JSON.stringify([id, r.revision]))
+            }));
+        });
+        res.json(workGuideRecordsResponseSchema.parse({ schemaVersion: '1', records: result }));
+    });
     // ルートは対象ごとにまとめる。新しいルートは対象のまとまりへ追加し、競合時は両側のルートを残す。
     api.post('/tasks', async (req, res) => {
         staff(res);
@@ -300,7 +363,17 @@ export function createApp(options: {
     api.get('/jobs/:id', async (req, res) => {
         staff(res);
         const j = await get('generationJobs', req.params.id, res);
-        send(res, { status: j.status, draftId: j.draftId, errorCode: j.errorCode });
+        let retryInput: unknown;
+        if (j.kind === 'guide' && j.status === 'failed' && j.inputSnapshot?.sourceReleaseId) {
+            const snapshot = improvementGuideInputSnapshotSchema.parse(j.inputSnapshot);
+            const draft = await get('drafts', j.draftId, res);
+            if (draft.jobId !== j.id || draft.taskId !== j.taskId || draft.learnerId !== snapshot.learnerId ||
+                snapshot.taskId !== j.taskId || draft.sourceReleaseId !== snapshot.sourceReleaseId)
+                fail(409, 'INVALID_IMPROVEMENT_JOB');
+            retryInput = improvementRetryInputSchema.parse({ learnerId: snapshot.learnerId,
+                sourceReleaseId: snapshot.sourceReleaseId, supportInputs: snapshot.supportInputs });
+        }
+        send(res, { status: j.status, draftId: j.draftId, errorCode: j.errorCode, ...(retryInput ? { retryInput } : {}) });
     });
     api.get('/drafts/:id', async (req, res) => {
         staff(res);

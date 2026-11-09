@@ -49,3 +49,40 @@ test('source assignment and record ownership are checked on new requests', async
     assert.equal((await post(body)).status, 409);
     assert.equal(db.all('generationJobs').length, 0);
 });
+
+test('failed improvement exposes only its scoped retry input and accepts a new idempotent job', async () => {
+    const { db, body, post } = setup();
+    const firstResponse = await post(body);
+    const first = await firstResponse.json() as { jobId: string; draftId: string };
+    const job = db.get('generationJobs', first.jobId)!;
+    db.put('generationJobs', { ...job, status: 'failed' });
+    db.put('drafts', { ...db.get('drafts', first.draftId)!, status: 'failed' });
+    const app = createApp({ db }).app;
+    const getJob = (token: string) => app.fetch(new Request(`http://localhost/api/v1/jobs/${first.jobId}`, { headers: { authorization: `Bearer ${token}` } }));
+    assert.equal((await getJob('learner-a')).status, 403);
+    assert.equal((await getJob('newcomer')).status, 403);
+    assert.equal((await getJob('other-staff')).status, 403);
+    const data = await (await getJob('staff')).json() as { retryInput: { learnerId: string; sourceReleaseId: string; supportInputs: typeof body.supportInputs } };
+    assert.deepEqual(data.retryInput, { learnerId: body.learnerId, sourceReleaseId: body.sourceReleaseId, supportInputs: body.supportInputs });
+    assert.equal(JSON.stringify(data).includes('private raw note'), false);
+    const retry = { ...data.retryInput, clientRequestId: 'retry-key' };
+    const response = await post(retry); assert.equal(response.status, 202);
+    const next = await response.json() as { jobId: string; draftId: string };
+    assert.notEqual(next.jobId, first.jobId);
+    assert.deepEqual(await (await post(retry)).json(), next);
+    assert.equal(db.get('generationJobs', next.jobId)!.inputSnapshot.sourceReleaseId, body.sourceReleaseId);
+    assert.deepEqual(db.get('generationJobs', next.jobId)!.inputSnapshot.supportInputs, body.supportInputs);
+    const record = db.get('supportRecords', 'record')!;
+    db.put('supportRecords', { ...record, revision: 2 });
+    assert.equal((await post({ ...retry, clientRequestId: 'different-key' })).status, 409);
+});
+
+test('retry input is never returned for a mismatched job and draft', async () => {
+    const { db, body, post } = setup();
+    const result = await (await post(body)).json() as { jobId: string; draftId: string };
+    const job = db.get('generationJobs', result.jobId)!;
+    db.put('generationJobs', { ...job, status: 'failed', taskId: 'other-task' });
+    const response = await createApp({ db }).app.fetch(new Request(`http://localhost/api/v1/jobs/${result.jobId}`, { headers: { authorization: 'Bearer staff' } }));
+    assert.equal(response.status, 409);
+    assert.equal(JSON.stringify(await response.json()).includes('確認済み要約'), false);
+});

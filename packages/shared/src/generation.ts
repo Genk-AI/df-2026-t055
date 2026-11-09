@@ -18,14 +18,13 @@ const supportInputs = z.array(supportInputSchema).min(1).refine(
     inputs => new Set(inputs.map(input => input.recordId)).size === inputs.length,
     'Duplicate recordId'
 );
-export const improvementGenerationRequestSchema = z.object({
-    learnerId: id, sourceReleaseId: id, supportInputs, clientRequestId: id.max(100)
-}).strict();
+export const improvementRetryInputSchema = z.object({ learnerId: id, sourceReleaseId: id, supportInputs }).strict();
+export const improvementGenerationRequestSchema = improvementRetryInputSchema.extend({ clientRequestId: id.max(100) }).strict();
 // The legacy initial request has no tag; strict shapes distinguish it from improvements.
 export const guideGenerationRequestSchema = z.union([initialGenerationRequestSchema, improvementGenerationRequestSchema]);
 export const generationCreateResponseSchema = z.object({ schemaVersion: version, jobId: id, draftId: id }).strict();
 export const generationJobStatusSchema = generationCreateResponseSchema.extend({
-    kind: z.enum(['guide', 'correction_context']), status, errorCode
+    kind: z.enum(['guide', 'correction_context']), status, errorCode, retryInput: improvementRetryInputSchema.optional()
 }).strict();
 export const generationPreferencesSchema = z.object({
     sentenceLength: z.number().int().min(1).max(40), splitHints: z.string().max(200), audioGuidance: z.boolean()

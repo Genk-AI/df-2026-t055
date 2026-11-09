@@ -23,7 +23,8 @@ const hooks = await import(hookUrl);
 let source = await readFile(new URL('../apps/web/src/staff-learners.tsx', import.meta.url), 'utf8');
 source = source.replace("'react'", JSON.stringify(hookUrl))
     .replace("'../../../packages/shared/src/learner-profile.ts'", JSON.stringify(new URL('../packages/shared/src/learner-profile.ts', import.meta.url).href))
-    .replace("'./learner-form.ts'", JSON.stringify(new URL('../apps/web/src/learner-form.ts', import.meta.url).href));
+    .replace("'./learner-form.ts'", JSON.stringify(new URL('../apps/web/src/learner-form.ts', import.meta.url).href))
+    .replace("'./staff-work-guides.tsx'", JSON.stringify('data:text/javascript,export function StaffWorkGuides(){}'));
 const compiled = ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
 const { StaffLearners, ProfileValues } = await import('data:text/javascript;base64,' + Buffer.from(compiled).toString('base64'));
 function nodes(tree: any): any[] {

@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import { generationRequestSchema } from './generation.ts';
 export * from './generation.ts';
+export * from './work-guides.ts';
 export const schemaVersion = '1' as const;
 const time = z.number().int().nonnegative();
 const candidate = z.string().max(200);

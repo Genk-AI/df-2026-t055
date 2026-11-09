@@ -24,7 +24,7 @@ source = source.slice(source.indexOf('function Draft('), source.indexOf('\nfunct
 source = `import React, {useState,useEffect,useRef} from ${JSON.stringify(hookUrl)};
 import {missingDraftChecks,draftPreviewMode,savedDraftReview} from ${JSON.stringify(new URL('../apps/web/src/draft-review.ts', import.meta.url).href)};
 import {isManualDraft,releaseCopySource,beginReleaseCopy} from ${JSON.stringify(new URL('../apps/web/src/release-copy.ts', import.meta.url).href)};
-import {releaseCopyResponseSchema} from ${JSON.stringify(new URL('../packages/shared/src/index.ts', import.meta.url).href)};
+import {releaseCopyResponseSchema,improvementRetryInputSchema} from ${JSON.stringify(new URL('../packages/shared/src/index.ts', import.meta.url).href)};
 const api=(...args)=>globalThis.draftApi(...args); const go=(path)=>globalThis.draftGo?.(path); const Asset=()=>null;
 export ${source}`;
 const compiled = ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
@@ -211,4 +211,69 @@ test('staff copy handlers use the real API through edit, re-confirm, approval an
     // Source fetch errors remain visible through the existing action error handling; editing stays available.
     failSource=true;let error='';hooks.reset();hooks.begin();Draft({id:manual.id,action:async(fn:any)=>{try{await fn();}catch(e){error=(e as Error).message;}}});await hooks.flush();assert.equal(error,'出所取得失敗');
     failSource=false;hooks.reset();renderHandover(false);await hooks.flush();tree=renderHandover(false);assert.equal(button(tree,'コピーして直す'),undefined);
+});
+
+test('failed improvement retry keeps source and summaries, and reuses its new request key after a network error', async () => {
+    const h = harness();
+    Object.assign(h.server, { status: 'failed', jobId: 'failed-job', sourceReleaseId: 'source', origin: 'improvement' });
+    const posts: any[] = []; let destination = '';
+    const retryInput = { learnerId: 'a', sourceReleaseId: 'source', supportInputs: [{ recordId: 'record', revision: 3, summary: '確認した要約' }] };
+    Object.assign(globalThis, { draftGo: (path: string) => { destination = path; }, draftApi: async (url: string, method = 'GET', body?: any) => {
+        if (url === '/drafts/draft') return { draft: h.server };
+        if (url === '/tasks/task') return { task: {} };
+        if (url === '/jobs/failed-job') return { status: 'failed', draftId: 'draft', retryInput };
+        if (method === 'POST') { posts.push(body); if (posts.length === 1) throw Error('network'); return { jobId: 'new-job', draftId: 'new-draft' }; }
+        throw Error('unexpected');
+    } });
+    let tree = await open(h);
+    button(tree, '新しいジョブで再試行').props.onClick(); await settle(); tree = h.render();
+    assert.match(text(tree), /再試行できませんでした/);
+    button(tree, '新しいジョブで再試行').props.onClick(); await settle();
+    assert.equal(posts.length, 2);
+    assert.deepEqual({ learnerId: posts[0].learnerId, sourceReleaseId: posts[0].sourceReleaseId, supportInputs: posts[0].supportInputs }, retryInput);
+    assert.equal(posts[0].clientRequestId, posts[1].clientRequestId);
+    assert.equal(destination, '/staff/tasks/task/drafts/new-draft');
+});
+
+test('failed improvement retry shows conflict and reselect path without falling back to initial generation', async () => {
+    const h = harness(); Object.assign(h.server, { status: 'failed', jobId: 'failed-job', sourceReleaseId: 'source', origin: 'improvement' });
+    const posts: any[] = []; let destination = '';
+    Object.assign(globalThis, { draftGo: (path: string) => { destination = path; }, draftApi: async (url: string, method = 'GET', body?: any) => {
+        if (url === '/drafts/draft') return { draft: h.server };
+        if (url === '/tasks/task') return { task: {} };
+        if (url === '/jobs/failed-job') return { status: 'failed', draftId: 'draft', retryInput: { learnerId: 'a', sourceReleaseId: 'source', supportInputs: [{ recordId: 'r', revision: 1, summary: '要約' }] } };
+        if (method === 'POST') { posts.push(body); throw Object.assign(Error('stale'), { status: 409 }); }
+        throw Error('unexpected');
+    } });
+    let tree = await open(h); button(tree, '新しいジョブで再試行').props.onClick(); await settle(); tree = h.render();
+    assert.match(text(tree), /記録を確認し、選び直して/);
+    assert.equal(posts.length, 1); assert.equal(posts[0].sourceReleaseId, 'source'); assert.equal(posts[0].supportInputs[0].summary, '要約');
+    button(tree, '本人別の作業一覧で記録を選び直す').props.onClick(); assert.equal(destination, '/staff/learners/a');
+});
+
+test('missing retry snapshot never falls back to creating an initial generation', async () => {
+    const h = harness(); Object.assign(h.server, { status: 'failed', jobId: 'failed-job', sourceReleaseId: 'source', origin: 'improvement' });
+    const posts: any[] = [];
+    Object.assign(globalThis, { draftApi: async (url: string, method = 'GET', body?: any) => {
+        if (url === '/drafts/draft') return { draft: h.server };
+        if (url === '/tasks/task') return { task: {} };
+        if (url === '/jobs/failed-job') return { status: 'failed', draftId: 'draft' };
+        if (method === 'POST') posts.push(body);
+        throw Error('unexpected');
+    } });
+    let tree = await open(h); button(tree, '新しいジョブで再試行').props.onClick(); await settle(); tree = h.render();
+    assert.match(text(tree), /再試行できませんでした/); assert.equal(posts.length, 0);
+});
+
+test('initial generation retry remains an initial request', async () => {
+    const h = harness(); Object.assign(h.server, { status: 'failed', jobId: 'failed-job' });
+    const posts: any[] = [];
+    Object.assign(globalThis, { draftApi: async (url: string, method = 'GET', body?: any) => {
+        if (url === '/drafts/draft') return { draft: h.server };
+        if (url === '/tasks/task') return { task: {} };
+        if (method === 'POST') { posts.push(body); return { jobId: 'next', draftId: 'next-draft' }; }
+        throw Error('unexpected');
+    } });
+    const tree = await open(h); button(tree, '新しいジョブで再試行').props.onClick(); await settle();
+    assert.deepEqual(posts, [{ learnerId: 'a' }]);
 });
