@@ -3,10 +3,12 @@ import { staffIdentitySchema, staffSupportSessionSchema, supportRequestListRespo
 import { SupportRecordForm } from './support-record.tsx';
 
 type Api = (path: string, method?: string, body?: unknown) => Promise<any>;
-export function StaffSupport({ api, go, subscribe }: { api: Api; go: (path: string) => void; subscribe: (receive: (value: unknown) => void) => () => void }) {
+export function StaffSupport({ api, go, subscribe }: { api: Api; go: (path: string) => void; subscribe: (receive: (value: unknown) => void, status: (connected: boolean) => void) => () => void }) {
     const [uid, setUid] = useState(''), [items, setItems] = useState<SupportRequest[]>([]), [waiting, setWaiting] = useState<string[]>([]), [error, setError] = useState(''), [loading, setLoading] = useState(true), [busy, setBusy] = useState<Record<string, boolean>>({}), [confirmed, setConfirmed] = useState<Record<string, boolean>>({});
     const sequence = useRef(0), loadingList = useRef(false), refreshPending = useRef(false), inFlight = useRef(new Set<string>()), retry = useRef<Record<string, { clientRequestId: string; expectedSessionRevision: number }>>({});
     const alive = useRef(true);
+    const connected = useRef(false), fallback = useRef(true);
+    const [realtime, setRealtime] = useState(false);
     const recordButtons = useRef<Record<string, HTMLButtonElement | null>>({}), heading = useRef<HTMLHeadingElement>(null);
     const [recordIds, setRecordIds] = useState<string[]>([]), [recordOpen, setRecordOpen] = useState<Record<string, boolean>>({});
     const openRecord = (requestId: string) => { setRecordIds(old => old.includes(requestId) ? old : [...old, requestId]); setRecordOpen(old => ({ ...old, [requestId]: true })); };
@@ -23,8 +25,8 @@ export function StaffSupport({ api, go, subscribe }: { api: Api; go: (path: stri
                 try { const s = staffSupportSessionSchema.parse(await api(`/support-requests/${encodeURIComponent(q.requestId)}/session-state`)); return s.status === 'waiting_help' && s.currentRequest ? q.requestId : ''; }
                 catch { return ''; }
             }));
-            if (alive.current && current === sequence.current) { setItems([...active, ...completed]); setWaiting(states.filter(Boolean)); setError(''); setLoading(false); }
-        } catch (e) { if (alive.current && current === sequence.current) { setError((e as Error).message); setLoading(false); } }
+            if (alive.current && current === sequence.current) { fallback.current = !connected.current; setItems([...active, ...completed]); setWaiting(states.filter(Boolean)); setError(''); setLoading(false); }
+        } catch (e) { if (alive.current && current === sequence.current) { fallback.current = true; setError((e as Error).message); setLoading(false); } }
         finally {
             loadingList.current = false;
             if (refreshPending.current && alive.current) { refreshPending.current = false; void load(staffUid); }
@@ -34,8 +36,8 @@ export function StaffSupport({ api, go, subscribe }: { api: Api; go: (path: stri
         alive.current = true;
         let currentUid = '';
         void (async () => { try { currentUid = staffIdentitySchema.parse(await api('/staff/me')).uid; if (alive.current) { setUid(currentUid); await load(currentUid); } } catch (e) { if (alive.current) { setError((e as Error).message); setLoading(false); } } })();
-        const timer = setInterval(() => { if (currentUid) void load(currentUid); }, 3000);
-        const unsubscribe = subscribe(value => { try { staffSupportNotificationSchema.parse(value); if (currentUid) void load(currentUid); } catch { /* Reconnect and polling recover malformed notifications. */ } });
+        const timer = setInterval(() => { if (currentUid && (!connected.current || fallback.current)) void load(currentUid); }, 3000);
+        const unsubscribe = subscribe(value => { staffSupportNotificationSchema.parse(value); if (currentUid) void load(currentUid); }, status => { if (alive.current) { connected.current = status; setRealtime(status); if (!status) fallback.current = true; } });
         return () => { alive.current = false; sequence.current++; clearInterval(timer); unsubscribe(); };
     }, [api, subscribe]);
     const act = async (q: SupportRequest, operation: 'claim' | 'start' | 'acknowledge' | 'resume') => {
@@ -61,7 +63,7 @@ export function StaffSupport({ api, go, subscribe }: { api: Api; go: (path: stri
             if (alive.current) setError((e as Error).message);
         } finally { inFlight.current.delete(q.requestId); if (alive.current) setBusy(old => ({ ...old, [q.requestId]: false })); }
     };
-    return <><button onClick={() => go('/staff')}>作業一覧</button><h1 ref={heading} tabIndex={-1}>支援要求</h1><p>3秒間隔で更新します。</p>
+    return <><button onClick={() => go('/staff')}>作業一覧</button><h1 ref={heading} tabIndex={-1}>支援要求</h1><p role="status">{realtime ? '通知を受信中' : '通知が切断中です。3秒ごとに確認します。'}</p>
         {error && <p role="alert">更新または操作に失敗しました：{error}</p>}{loading && <p role="status">読み込み中です</p>}
         {!loading && !error && !items.length && <p>未対応の要求はありません。</p>}
         {items.map(q => <section key={q.requestId}><h2>{q.kind === 'stop' ? 'やめる' : '手伝って'}：{q.status === 'open' ? '対応待ち' : q.status === 'assigned' ? '担当決定済み' : q.status === 'in_progress' ? '対応中' : '対応完了'}</h2>

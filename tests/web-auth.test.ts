@@ -23,14 +23,19 @@ test('web socket fetches a fresh token for each connection and cancels pending a
     globalThis.WebSocket = FakeSocket as any;
     let stop: (() => void) | undefined;
     try {
-        let calls = 0;
-        stop = subscribeSupport(async () => 'token-' + ++calls, 'session', () => {});
+        let calls = 0; const statuses: boolean[] = [];
+        stop = subscribeSupport(async () => 'token-' + ++calls, 'session', value => { if ((value as any).type !== 'snapshot') throw Error('invalid'); }, value => statuses.push(value));
         await connections[0].onopen();
         assert.deepEqual(JSON.parse(connections[0].messages[0]), { type: 'auth', idToken: 'token-1' });
+        assert.deepEqual(statuses, []); // socket open and auth send are not authenticated snapshots
+        connections[0].onmessage({ data: JSON.stringify({ type: 'snapshot' }) });
+        assert.deepEqual(statuses, [true]);
         assert.equal(connections[0].url.href, 'wss://demo.invalid/api/v1/ws?sessionId=session');
-        connections[0].close(); t.mock.timers.tick(3000);
+        connections[0].close(); assert.deepEqual(statuses, [true, false]); t.mock.timers.tick(3000);
         await connections[1].onopen();
         assert.equal(JSON.parse(connections[1].messages[0]).idToken, 'token-2');
+        connections[1].onmessage({ data: JSON.stringify({ type: 'invalid' }) });
+        assert.deepEqual(statuses, [true, false, false]);
         stop();
         let resolveToken!: (token: string) => void;
         stop = subscribeSupport(() => new Promise(resolve => { resolveToken = resolve; }), undefined, () => {});

@@ -16,7 +16,7 @@ import './style.css';
 const accounts = [['staff', '職員'], ['learner-a', '本人 Aさん'], ['learner-b', '本人 Bさん'], ['newcomer', '新人']] as const;
 let account = localStorage.getItem('demoAccount') ?? 'staff';
 const getToken = createTokenProvider(() => account);
-const subscribeStaffSupport = (receive: (value: unknown) => void) => subscribeSupport(getToken, undefined, receive);
+const subscribeStaffSupport = (receive: (value: unknown) => void, status: (connected: boolean) => void) => subscribeSupport(getToken, undefined, receive, status);
 async function api(path: string, method = 'GET', body?: unknown) {
     const r = await fetch(`/api/v1${path}`, { method, headers: { Authorization: `Bearer ${await getToken()}`, ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: body instanceof FormData ? body : JSON.stringify(body) }) });
     const data = await r.json();
