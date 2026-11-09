@@ -186,7 +186,7 @@ export function createApp(options: {
     });
     api.get('/tasks', async (req, res) => {
         staff(res);
-        send(res, { tasks: await Promise.all((await list('tasks', res)).map(async (t) => ({ ...t, generationJobs: (await list('generationJobs', res)).filter(j => j.taskId === t.id).map(j => ({ jobId: j.id, draftId: j.draftId, status: j.status })) }))) });
+        send(res, { tasks: await Promise.all((await list('tasks', res)).map(async (t) => ({ ...t, generationJobs: (await list('generationJobs', res)).filter(j => j.taskId === t.id && j.kind !== 'correction_context').map(j => ({ jobId: j.id, draftId: j.draftId, status: j.status })) }))) });
     });
     api.get('/tasks/:id', async (req, res) => {
         staff(res);
@@ -380,7 +380,13 @@ export function createApp(options: {
         const d = await get('drafts', req.params.id, res);
         if (d.sourceReleaseId) {
             const { id, orgId, createdAt, clientRequestId, modificationCount, correctionReason, ...detail } = d;
-            return send(res, { draft: draftDetailSchema.parse({ ...detail, schemaVersion: '1', draftId: id }) });
+            let referencedSupportInputs: unknown;
+            if (d.origin === 'improvement') {
+                const job = await get('generationJobs', d.jobId, res);
+                if (job.draftId !== d.id || job.taskId !== d.taskId || job.inputSnapshot?.sourceReleaseId !== d.sourceReleaseId) fail(422, 'INVALID_IMPROVEMENT_JOB');
+                referencedSupportInputs = improvementGuideInputSnapshotSchema.parse(job.inputSnapshot).supportInputs;
+            }
+            return send(res, { draft: draftDetailSchema.parse({ ...detail, schemaVersion: '1', draftId: id, ...(referencedSupportInputs ? { referencedSupportInputs } : {}) }) });
         }
         send(res, { draft: d });
     });

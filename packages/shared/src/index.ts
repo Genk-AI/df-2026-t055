@@ -1,6 +1,6 @@
 // 共有契約の集約点。分野別の契約を専用ファイルへ分けるときは、ここから再exportして既存の参照を保つ。競合時は両側の追加を残す。
 import { z } from 'zod';
-import { generationRequestSchema } from './generation.ts';
+import { generationRequestSchema, supportInputSchema } from './generation.ts';
 export * from './generation.ts';
 export * from './work-guides.ts';
 export const schemaVersion = '1' as const;
@@ -113,7 +113,7 @@ const draftBase = {
 };
 export const aiDraftSchema = z.object({ ...draftBase,
     status: z.enum(['generating', 'editing', 'approved', 'failed']),
-    jobId: identifier, sourceReleaseId: identifier.optional(), origin: z.literal('improvement').optional(), aiProposal: proposalSchema.optional()
+    jobId: identifier, sourceReleaseId: identifier.optional(), origin: z.literal('improvement').optional(), referencedSupportInputs: z.array(supportInputSchema).optional(), aiProposal: proposalSchema.optional()
 }).strict().refine(d => !!d.sourceReleaseId === (d.origin === 'improvement'));
 export const manualDraftSchema = z.object({ ...draftBase,
     status: z.enum(['editing', 'approved']), sourceReleaseId: identifier

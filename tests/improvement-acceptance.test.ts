@@ -11,12 +11,13 @@ function setup() {
     db.put('supportRecords', doc('demo', { id: 'record', taskId: 'task', learnerId: 'a', revision: 1, observedDifficulty: 'private raw note' }));
     const { app } = createApp({ db });
     const body = { learnerId: 'a', sourceReleaseId: 'release', supportInputs: [{ recordId: 'record', revision: 1, summary: '確認済み要約' }], clientRequestId: 'key' };
+    const getDraft = (draftId: string, token = 'staff') => app.fetch(new Request(`http://localhost/api/v1/drafts/${draftId}`, { headers: { authorization: `Bearer ${token}` } }));
     const post = (input: object) => app.fetch(new Request('http://localhost/api/v1/tasks/task/generations', { method: 'POST', headers: { authorization: 'Bearer staff', 'content-type': 'application/json' }, body: JSON.stringify(input) }));
-    return { db, body, post };
+    return { db, body, post, getDraft };
 }
 
 test('improvement is idempotent, fixed at acceptance, and preserves the accepted snapshot', async () => {
-    const { db, body, post } = setup();
+    const { db, body, post, getDraft } = setup();
     db.put('draftCorrections', doc('demo', { id: 'history', taskId: 'task', learnerId: 'a', draftRevision: 4, changes: [{ stepId: 'step', field: 'text', before: '前', after: '修正' }] }));
     const [first, second] = await Promise.all([post(body), post(body)]);
     assert.equal(first.status, 202); assert.equal(second.status, 202);
@@ -25,6 +26,10 @@ test('improvement is idempotent, fixed at acceptance, and preserves the accepted
     assert.equal(db.all('generationJobs').length, 1);
     const job = db.get('generationJobs', result.jobId)!;
     assert.deepEqual(job.inputSnapshot.supportInputs, body.supportInputs);
+    const detail = await getDraft(result.draftId);
+    assert.equal(detail.status, 200);
+    assert.deepEqual((await detail.json()).draft.referencedSupportInputs, body.supportInputs);
+    assert.equal((await getDraft(result.draftId, 'learner-a')).status, 403);
     assert.deepEqual(job.inputSnapshot.correctionRefs, [{ correctionId: 'history', draftRevision: 4 }]);
     assert.equal(job.inputSnapshot.correctionInputs[0].changes[0].after, '修正');
     db.put('draftCorrections', { ...db.get('draftCorrections', 'history')!, contextSummary: { editSummary: '後からの要約', nextDraftHint: '後から', reviewFlags: [] } });

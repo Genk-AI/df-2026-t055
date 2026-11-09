@@ -25,6 +25,7 @@ source = `import React, {useState,useEffect,useRef} from ${JSON.stringify(hookUr
 import {missingDraftChecks,draftPreviewMode,savedDraftReview} from ${JSON.stringify(new URL('../apps/web/src/draft-review.ts', import.meta.url).href)};
 import {isManualDraft,releaseCopySource,beginReleaseCopy} from ${JSON.stringify(new URL('../apps/web/src/release-copy.ts', import.meta.url).href)};
 import {releaseCopyResponseSchema,improvementRetryInputSchema} from ${JSON.stringify(new URL('../packages/shared/src/index.ts', import.meta.url).href)};
+const ImprovementReview=()=>null;
 const api=(...args)=>globalThis.draftApi(...args); const go=(path)=>globalThis.draftGo?.(path); const Asset=()=>null;
 export ${source}`;
 const compiled = ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
@@ -41,15 +42,18 @@ function text(tree: any): string {
 }
 function button(tree: any, label: string) { return nodes(tree).find(n => n.type === 'button' && text(n) === label); }
 
-function harness() {
+function harness(overrides: Record<string, unknown> = {}) {
     hooks.reset();
     const step = {stepId:'one',text:'折る',imageAssetId:'image',imageAltText:'手元',visibleCaution:'端に注意',coaching:'手本を示す',sourceStartMs:0,sourceEndMs:1000,frameMs:500,verifiedObservation:'',verifiedSpeech:'',completionCheck:''};
     const checks = {presentationConfirmed:true,flagResolution:'対応済み',steps:{one:{videoVerified:true,photoTextVerified:true}}};
     let server:any = {revision:1,status:'editing',taskId:'task',learnerId:'a',editedSteps:[step],reviewChecks:checks,displayMode:'photo_only',audioGuidance:true,aiProposal:{reviewFlags:['確認'],steps:[]}};
+    server = { ...server, ...overrides };
     let fail = 0, releaseChecks = false;
     const calls:any[] = [], storage = new Map();
     Object.assign(globalThis, {localStorage:{getItem:(k:string)=>storage.get(k),setItem:(k:string,v:string)=>storage.set(k,v),removeItem:(k:string)=>storage.delete(k)}, draftApi:async (url:string,method='GET',body?:any)=>{
         calls.push({url,method,body});
+        if(method==='GET' && url === '/handover/releases') return { releases: [{ releaseId: 'source', title: '作業', version: 1 }] };
+        if(method==='GET' && url === '/handover/releases/source') return { release: { approvedBy: 'staff', approvedAt: '2026-01-01T00:00:00Z', learnerSteps: [], staffGuide: [] } };
         if(method==='GET') return structuredClone(url.startsWith('/tasks')?{task:{}}:{draft:server});
         if(fail) throw Object.assign(Error('通信失敗'),{status:fail});
         if(method==='PATCH') {
@@ -92,6 +96,19 @@ test('labelled edits PATCH presentation and alt, server checks replace local che
     assert.equal(button(tree,'この内容を承認').props.disabled,false);
     button(tree,'この内容を承認').props.onClick();button(tree,'この内容を承認').props.onClick();await settle();
     assert.equal(h.calls.filter(c=>c.url.endsWith('/approve')).length,1);assert.match(text(h.render()),/承認済みです/);
+});
+test('improvement review receives references and saves only selected record versions', async () => {
+    const refs = [{ recordId: 'record', revision: 2, summary: '確認済み要約' }];
+    const h = harness({ origin: 'improvement', sourceReleaseId: 'source', jobId: 'job', referencedSupportInputs: refs });
+    let tree = await open(h);
+    const review = nodes(tree).find(n => n.type?.name === 'ImprovementReview');
+    assert.ok(review);
+    assert.deepEqual(review.props.references, refs);
+    assert.match(text(tree), /本人を特定できる情報を入れないでください/);
+    review.props.onChange([{ recordId: 'record', revision: 2 }]);
+    tree = h.render();
+    button(tree, '編集と確認を保存').props.onClick(); await settle();
+    assert.deepEqual(h.calls.find(c => c.method === 'PATCH').body.appliedSupportRecordRefs, [{ recordId: 'record', revision: 2 }]);
 });
 test('409 and failed send preserve all input, fetch latest separately, retry latest revision',async()=>{
     const h=harness();let tree=await open(h);

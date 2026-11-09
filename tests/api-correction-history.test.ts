@@ -87,6 +87,7 @@ test('reference notes are isolated by correction revision and exclude private fi
     assert.equal((await h.request('/drafts/draft', 'PATCH', { expectedRevision: 2, editedSteps: second, reviewChecks: h.checks })).status, 200);
     const corrections = h.db.all('draftCorrections');
     assert.equal(corrections.length, 2);
+    assert.deepEqual((await h.request('/tasks')).body.tasks[0].generationJobs, []);
     let captured: any;
     const run = createWorker(h.db, new LocalStorage(), new FakeModel(), 30, { async generate(input) { captured = input; return { editSummary: input.changes[0].after, nextDraftHint: '確認', reviewFlags: [] }; } });
     await run(corrections[1].contextJobId);
