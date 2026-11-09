@@ -13,6 +13,8 @@ import { configuredStorage } from './cloud-storage.ts';
 import { configuredRepository } from './firestore-repository.ts';
 import { configuredTts, type TtsAdapter } from './tts.ts';
 import { media } from './media.ts';
+import type { GenerationQueue } from './cloud-tasks.ts';
+import { generationEnabled } from './generation-control.ts';
 export class HttpError extends Error {
     constructor(public status: number, public code: string) {
         super(code);
@@ -42,7 +44,8 @@ export function createApp(options: {
     globalLimit?: number;
     internalToken?: string;
     modelId?: string;
-    runJob?: (jobId: string) => Promise<void>;
+    runJob?: (jobId: string) => Promise<unknown>;
+    queue?: GenerationQueue;
 } = {}) {
     const db = options.db ?? configuredRepository();
     if (!options.db && db instanceof MemoryRepository)
@@ -66,6 +69,7 @@ export function createApp(options: {
     app.use('/api/v1', async (req: Request, res: Response, next: NextFunction) => {
         try {
             if (['/api/v1/internal/generate', '/api/v1/internal/drain'].includes(req.path)) {
+                if (options.queue) fail(404, 'NOT_FOUND');
                 if (req.headers.authorization !== `Bearer ${internalToken}`)
                     fail(403, 'INTERNAL_ONLY');
                 return next();
@@ -257,6 +261,7 @@ export function createApp(options: {
         if (t.status !== 'ready')
             fail(409, 'VIDEO_NOT_READY');
         const result = await db.transaction(async () => {
+            if (!await generationEnabled(db)) fail(409, 'GENERATION_PAUSED');
             const jobs = await db.all('generationJobs');
             if (jobs.reduce((n, j) => n + j.budgetUsed, 0) >= limit || jobs.filter(j => j.taskId === t.id).reduce((n, j) => n + j.budgetUsed, 0) >= 10)
                 fail(409, 'GENERATION_LIMIT');
@@ -271,6 +276,8 @@ export function createApp(options: {
             await db.put('generationJobs', j);
             return { jobId: j.id, draftId: d.id };
         });
+        // The committed queued job is recovered by the external reconciliation schedule.
+        if (options.queue) { try { await options.queue.enqueue(result.jobId); } catch { /* Recovery retries after transient enqueue errors. */ } }
         send(res, result, 202);
     });
     api.post('/releases/:id/drafts', async (req, res) => {
@@ -854,7 +861,7 @@ export function createApp(options: {
     api.post('/internal/drain', async (req, res) => {
         if (!options.runJob)
             fail(503, 'WORKER_UNAVAILABLE');
-        const j = (await db.all('generationJobs')).find(j => j.status === 'queued' || j.status === 'running' && j.leaseUntil <= Date.now());
+        const j = (await db.all('generationJobs')).find(j => j.status === 'queued' || j.status === 'running' && (j.leaseUntil == null || j.leaseUntil <= Date.now()));
         if (j)
             await options.runJob(j.id);
         send(res, { status: 'processed' });

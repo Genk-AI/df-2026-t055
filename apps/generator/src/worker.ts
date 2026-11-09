@@ -12,24 +12,23 @@ export function createWorker(db: Repository, storage: Storage, model: VideoModel
             return;
         const claimed = await db.transaction(async () => {
             job = (await db.get('generationJobs', jobId))!;
-            if (['succeeded', 'failed'].includes(job.status) || job.status === 'running' && job.leaseUntil > Date.now())
-                return false;
+            if (['succeeded', 'failed'].includes(job.status)) return 'done';
+            if (job.status === 'running' && job.leaseUntil > Date.now()) return 'busy';
             const jobs = await db.all('generationJobs');
             if (job.attempt >= 3 || job.attempt > 0 && (jobs.reduce((n, j) => n + j.budgetUsed, 0) >= globalLimit || jobs.filter(j => j.taskId === job!.taskId).reduce((n, j) => n + j.budgetUsed, 0) >= 10)) {
                 await db.put('generationJobs', { ...job, status: 'failed', errorCode: 'ATTEMPT_LIMIT' });
                 const d = (await db.get('drafts', job.draftId))!;
                 await db.put('drafts', { ...d, status: 'failed' });
-                return false;
+                return 'done';
             }
             token = crypto.randomUUID();
             job = {
                 ...job, status: 'running', attempt: job.attempt + 1, budgetUsed: job.budgetUsed + (job.attempt > 0 ? 1 : 0), leaseUntil: Date.now() + 250000, leaseToken: token
             };
             await db.put('generationJobs', job);
-            return true;
+            return 'claimed';
         });
-        if (!claimed)
-            return;
+        if (claimed !== 'claimed') return claimed;
         const started = Date.now();
         let errorCode = 'GENERATION_FAILED';
         try {

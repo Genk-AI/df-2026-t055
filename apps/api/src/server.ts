@@ -4,6 +4,7 @@ import { createApp } from './app.ts';
 import { MemoryRepository, seed } from './adapters.ts';
 import { createWorker } from '../../generator/src/worker.ts';
 import { configuredStorage } from './cloud-storage.ts';
+import { configuredQueue } from './cloud-tasks.ts';
 import { configuredRepository } from './firestore-repository.ts';
 import { configuredModel } from '../../generator/src/model.ts';
 if (process.env.NODE_ENV === 'production')
@@ -13,7 +14,7 @@ if (db instanceof MemoryRepository) seed(db);
 const limit = Number(process.env.GENERATION_GLOBAL_LIMIT ?? 30);
 const runJob = createWorker(db, storage, configuredModel(process.env), limit);
 const { app } = createApp({
-    db, storage, globalLimit: limit, runJob
+    db, storage, globalLimit: limit, runJob, queue: configuredQueue()
 });
 app.get('/', (_req, res) => res.sendFile(resolve('apps/web/dist/index.html')));
 app.use(http.static(resolve('apps/web/dist')));

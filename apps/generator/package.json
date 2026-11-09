@@ -6,6 +6,7 @@
     "dev": "node --experimental-transform-types --watch src/server.ts"
   },
   "dependencies": {
-    "@google/genai": "^3.0.0"
+    "@google/genai": "^3.0.0",
+    "google-auth-library": "^11.3.3"
   }
 }
