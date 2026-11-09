@@ -8,6 +8,21 @@
 
 必要環境：Node.js 24以上、npm 10以上、PATH上のffmpeg / ffprobe 6以上（H.264 / AAC対応）、npmレジストリに接続可能な環境。
 
+### devenv（推奨）
+
+Node.js・npm・ffmpeg / ffprobe・lefthook を [devenv](https://devenv.sh/) で揃えます。Nix と devenv が入っていれば、ホスト側にNodeを入れなくても動きます。バージョンは `devenv.lock` で固定しています。
+
+```sh
+devenv shell -- npm install
+devenv shell -- npm run dev
+```
+
+`devenv shell -- <command>` の形でコマンドを実行してください。ホストのPATHにあるNodeやffmpegではなく、devenvの環境が使われます。シェルに入りっぱなしにする場合は `devenv shell` を実行し、その中で `npm ...` を叩きます。
+
+### ホストのNodeを使う場合
+
+devenv を使わず、ホストに Node.js 24以上と ffmpeg / ffprobe 6以上を入れて実行することもできます。この場合もコマンドは上と同じです。
+
 ```sh
 npm install
 npm run dev
@@ -53,9 +68,11 @@ DBはAPIプロセス内、バイナリは非公開の `.local/assets` に保存�
 ## テスト実行手順
 
 ```sh
-npm test
-npm run typecheck
-npm run build
+devenv shell -- npm test
+devenv shell -- npm run typecheck
+devenv shell -- npm run build
+devenv shell -- npm run lint
+devenv shell -- npm run format:check
 ```
 
 テストはNode標準テストランナーを使い、実際のAPIルーター・認証・スキーマ・インメモリDB・メディア処理を接続します。ポートは不要です。テスト内でffmpegのテストパターン＋音声からMP4を作るため、GCP認証や実動画の持込みも不要です。この素材はテスト専用で、手本の代用として表示しません。
@@ -63,6 +80,23 @@ npm run build
 権限、専用DTOの許可フィールド、承認必須チェックと同時二重送信、revision競合、写真の版専用コピー、再生成／新版割当後のセッション固定、停止と進行の競合、完了後の停止、端末の停止永続化、支援対応、生成失敗、全体／作業上限、リース回復と冪等性を検証します。
 
 `npm run build` は型検査後にViteでビルドします。ビルド後はAPIが `apps/web/dist` を同一オリジンで配信します（APIとgeneratorを別途起動し `http://127.0.0.1:3001/staff` へ）。
+
+## 整形とLint（oxfmt / oxlint）
+
+- `npm run format`：全ファイルを整形します（`oxfmt`）。`npm run format:check` は差分の有無だけを確認します。
+- `npm run lint`：`oxlint` で静的検査します。`npm run lint:fix` で自動修正できるものだけ直します。
+- 設定は [.oxfmtrc.json](.oxfmtrc.json) と [.oxlintrc.json](.oxlintrc.json) です。整形対象は TS / TSX / JS / JSON / HTML / CSS で、Markdown・docs・ロックファイルは対象外です。
+- `apps/web/src/style.css` は、CSSの記述形式を直接検証する回帰テスト（`tests/web-learner-controls.test.ts`）があるため整形対象から外しています。
+- oxlint の一部ルールは、既存コードの意図的な書き方や別途の修正が必要な箇所に当たるため、理由付きで無効化しています。有効化する場合は、修正と同じPRで1ルールずつ戻してください。
+
+### コミット時のフック（lefthook）
+
+`npm install` の `prepare` スクリプトが `lefthook install` を実行し、clone ごとに `.git/hooks` へフックを入れます。入らない場合は `npm exec lefthook install` を手動で実行してください。設定は [lefthook.yml](lefthook.yml) です。
+
+- **pre-commit**：ステージ済みのファイルだけを `oxfmt` で整形し、整形結果を自動で再ステージします。整形忘れでコミットが止まることはありません。`oxlint` の指摘は表示するだけで、コミットは止めません。
+- **commit-msg**：pre-commit を飛ばした場合（`LEFTHOOK=0` など）に備え、コミット対象ファイルが整形済みかを確認します。未整形ならコミットを中止します。
+- merge / rebase / cherry-pick / revert のコミットではフックを実行しません。緊急時は `LEFTHOOK=0 git commit ...` でそのコマンドだけ回避できます。
+- CI でも `npm run format:check` と `npm run lint` を実行します。
 
 ## 構成と境界
 

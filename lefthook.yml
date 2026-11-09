@@ -1,0 +1,52 @@
+# Git hooks for this repository. Installed per clone by `npm install` (prepare script)
+# or by hand with `npm exec lefthook install`.
+#
+# The project had no formatter before this change, so the hooks are kept narrow:
+#   - pre-commit only touches the files that are actually staged,
+#   - formatting is auto-fixed and re-staged, so a commit is never blocked just
+#     because the code was not formatted yet,
+#   - lint findings are printed but do not block the commit (CI stays the gate),
+#     so an unrelated pre-existing warning cannot stop an urgent commit,
+#   - merge / rebase / cherry-pick / revert commits are skipped entirely.
+# Use `LEFTHOOK=0 git commit ...` to bypass the hooks for a single command.
+
+min_version: 2.0.0
+
+# execution_out keeps the output of successful jobs visible; without it a
+# passing `lint` job would print nothing and hide its findings.
+output:
+  - meta
+  - summary
+  - execution_out
+
+pre-commit:
+  # Do not interfere with history-editing operations or CI checkouts.
+  skip:
+    - merge
+    - rebase
+    - cherry-pick
+    - revert
+  parallel: true
+  jobs:
+    - name: format
+      glob: '*.{ts,tsx,mts,cts,js,jsx,mjs,cjs,json,jsonc,html,css}'
+      run: node_modules/.bin/oxfmt --no-error-on-unmatched-pattern {staged_files}
+      stage_fixed: true
+
+    - name: lint
+      glob: '*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'
+      # Report only: never block a commit on lint findings.
+      run: node_modules/.bin/oxlint --no-error-on-unmatched-pattern {staged_files} || true
+
+commit-msg:
+  jobs:
+    - name: format-check
+      # Guard against a commit that skipped the pre-commit hook (e.g. LEFTHOOK=0
+      # or a stale hook) leaving unformatted files behind. Checks only the files
+      # in the commit, and is skipped for merge commits.
+      skip:
+        - merge
+      run: |
+        files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|json|jsonc|html|css)$' | grep -v '^apps/web/src/style.css$' || true)
+        [ -n "$files" ] || exit 0
+        node_modules/.bin/oxfmt --check $files

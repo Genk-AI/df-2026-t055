@@ -38,3 +38,7 @@ Thumbs.db
 
 # Prepared container context (dependencies and downloaded GPL binaries)
 .containers/
+
+# devenv のローカル状態（devenv.lock はコミットする）
+.devenv/
+.direnv/

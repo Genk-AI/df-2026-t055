@@ -10,7 +10,12 @@
     "dev": "node scripts/dev.mjs",
     "build": "tsc --noEmit && npm run build -w apps/web",
     "test": "node --experimental-transform-types --test --test-isolation=none tests/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "prepare": "lefthook install || true"
   },
   "dependencies": {
     "react": "^19.1.0",
@@ -21,6 +26,9 @@
     "@types/node": "^24.0.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
+    "lefthook": "^2.2.2",
+    "oxfmt": "^0.78.0",
+    "oxlint": "^1.93.0",
     "typescript": "^5.9.0",
     "vite": "^7.1.0"
   }

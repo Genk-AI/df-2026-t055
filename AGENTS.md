@@ -7,6 +7,24 @@
 - A型・B型・一般企業等は導入先の例であり、本人の能力・必要な配慮・UIの複雑さを自動判定する区分ではない。
 - 実装済みだと主張する前に、テスト・動作検証の実施範囲と未検証事項を明示する。秘密情報や本人の実データを公開リポジトリに含めない。
 
+## コマンド実行（必須）
+
+- **このリポジトリで Node / npm / ffmpeg / lefthook を使うコマンドは、必ず `devenv shell -- <command>` で実行する。** ホストの `node`・`npm`・`npx` を直接叩かない。devenv の環境（`devenv.nix`・`devenv.lock`）でコマンドを実行する。
+  - 例：`devenv shell -- npm test`、`devenv shell -- npm run typecheck`、`devenv shell -- npm run build`、`devenv shell -- npm install`、`devenv shell -- npm run lint`、`devenv shell -- npm run format:check`、`devenv shell -- ffprobe -version`。
+  - 引数を渡すときは `devenv shell -- npm run build -w apps/web` のように `--` の後ろへ書く。
+- 複数コマンドを続けるときは `devenv shell -- sh -c 'npm ci && npm test'` のように `sh -c` へまとめる。ホスト側のシェルで `npm` を直接呼ばない。
+- 対話的に作業するときは `devenv shell` でシェルに入り、その中で `npm ...` を実行してもよい。ただし、エージェントは1コマンドずつ実行するので `devenv shell -- <command>` を使う。
+- devenv が使えない環境（CI・Cloud Build・コンテナ）では、その環境の Node 24 を使う。ローカルで `devenv` が無い場合は、作業を止めて導入してもらうか、その旨を報告する。
+- 確認コマンド：`devenv shell -- node -v` が `v24` 系を返すこと。`devenv shell -- which node` が `/nix/store/...` を指すこと。
+- `devenv run <command>` は devenv 2.4.0 に存在しない（`devenv shell --` と `devenv tasks run` のみ）。`devenv run` と書かれた指示があっても `devenv shell -- <command>` に読み替える。
+
+## 整形とLint
+
+- コミット前に `devenv shell -- npm run format`（整形）と `devenv shell -- npm run lint`（静的検査）を実行する。PR作成前は `devenv shell -- npm run format:check` と `devenv shell -- npm run lint` を通す。
+- コミット時は lefthook のフックがステージ済みファイルを自動整形する。`LEFTHOOK=0` や `--no-verify` で飛ばすと commit-msg フックが未整形コミットを中止する。緊急時のみ使い、PR本文に理由を書く。
+- 設定は [.oxfmtrc.json](.oxfmtrc.json)・[.oxlintrc.json](.oxlintrc.json)・[lefthook.yml](lefthook.yml)。整形対象外のファイルや無効化したルールを増やす場合は、理由を同じPRに書く。
+- 整形だけのコミットは、機能変更と分けて作る。整形で大量の差分が出たファイルは、レビュー時に「整形のみ」と分かるようコミットを分ける。
+
 ## アクセシビリティに関わる変更
 
 - 本人・職員・新人のUI、手順文やAI生成指示、プロフィールの提示設定、音声、支援要求、停止・通信断、確認・承認の操作を変更するときは、[REPORT.md](REPORT.md) を設計根拠として参照する。

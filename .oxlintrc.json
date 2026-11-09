@@ -1,0 +1,68 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "import", "react", "jsx-a11y", "node", "promise"],
+  "env": {
+    "builtin": true,
+    "node": true
+  },
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    "no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "ignoreRestSiblings": true,
+        "caughtErrors": "none"
+      }
+    ],
+
+    // The rules below are turned off because the existing code already has
+    // findings that are intentional or are a larger refactor than this change
+    // should carry. Turn them back on one at a time, with a fix, in later PRs.
+    "react-hooks/exhaustive-deps": "off",
+    "react/exhaustive-effect-dependencies": "off",
+    "react/set-state-in-effect": "off",
+    "oxc/no-async-endpoint-handlers": "off",
+    "unicorn/no-array-sort": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "unicorn/prefer-add-event-listener": "off",
+    "unicorn/no-array-fill-with-reference-type": "off",
+    "promise/no-promise-in-callback": "off",
+    "promise/no-callback-in-promise": "off",
+    "promise/always-return": "off",
+    "import/no-unassigned-import": "off",
+    "import/no-named-as-default-member": "off",
+    "no-shadow": "off",
+    // `video` in <ImprovementReview> is a render prop that returns nodes, not a
+    // component definition; allowAsProps reflects that intent.
+    "react/no-unstable-nested-components": ["warn", { "allowAsProps": true }],
+    // Learner keeps the newest session in a ref written during render so async
+    // callbacks can read it. Intentional; revisit if the component is reworked.
+    "react/refs": "off",
+    "jsx-a11y/prefer-tag-over-role": "off",
+    "jsx-a11y/media-has-caption": "off",
+    "jsx-a11y/anchor-is-valid": "off",
+    "jsx-a11y/no-static-element-interactions": "off"
+  },
+  "ignorePatterns": [
+    "node_modules/**",
+    "dist/**",
+    "build/**",
+    "out/**",
+    ".next/**",
+    ".wrangler/**",
+    ".local/**",
+    ".containers/**",
+    ".devenv/**"
+  ],
+  "overrides": [
+    {
+      "files": ["apps/web/**/*.{ts,tsx}"],
+      "env": { "browser": true }
+    }
+  ]
+}
