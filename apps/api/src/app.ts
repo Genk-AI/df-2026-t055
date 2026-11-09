@@ -13,6 +13,7 @@ import { configuredRepository } from './firestore-repository.ts';
 import { configuredTts, type TtsAdapter } from './tts.ts';
 import { media } from './media.ts';
 import type { GenerationQueue } from './cloud-tasks.ts';
+import { generationEnabled } from './generation-control.ts';
 export class HttpError extends Error {
     constructor(public status: number, public code: string) {
         super(code);
@@ -197,6 +198,7 @@ export function createApp(options: {
         if (t.status !== 'ready')
             fail(409, 'VIDEO_NOT_READY');
         const result = await db.transaction(async () => {
+            if (!await generationEnabled(db)) fail(409, 'GENERATION_PAUSED');
             const jobs = await db.all('generationJobs');
             if (jobs.reduce((n, j) => n + j.budgetUsed, 0) >= limit || jobs.filter(j => j.taskId === t.id).reduce((n, j) => n + j.budgetUsed, 0) >= 10)
                 fail(409, 'GENERATION_LIMIT');
