@@ -6,6 +6,7 @@ import { releaseCopyResponseSchema, improvementRetryInputSchema } from '../../..
 import { missingDraftChecks, draftPreviewMode, savedDraftReview } from './draft-review.ts';
 import { StaffLearners } from './staff-learners.tsx';
 import { createTokenProvider } from './auth.ts';
+import { createFirebaseSession } from './firebase-session.ts';
 import { subscribeSupport } from './support-ws.ts';
 import { staffSupportNotificationSchema, learnerSupportNotificationSchema } from '../../../packages/shared/src/support.ts';
 import React, { useEffect, useRef, useState } from 'react';
@@ -14,8 +15,18 @@ import type { EditedStep, ReviewChecks, LearnerSessionDTO } from '../../../packa
 import { hold, readSafety, flushSafety, safetyKey, clearWaiting } from './safety.ts';
 import './style.css';
 const accounts = [['staff', '職員'], ['learner-a', '本人 Aさん'], ['learner-b', '本人 Bさん'], ['newcomer', '新人']] as const;
-let account = localStorage.getItem('demoAccount') ?? 'staff';
-const getToken = createTokenProvider(() => account);
+const authMode = import.meta.env.VITE_AUTH_BACKEND ?? 'demo';
+let firebaseSession: ReturnType<typeof createFirebaseSession> | undefined;
+let authConfigurationError = '';
+if (authMode === 'firebase') {
+    try { firebaseSession = createFirebaseSession({ apiKey: import.meta.env.VITE_FIREBASE_API_KEY ?? '', authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ?? '', projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID ?? '' }); }
+    catch { authConfigurationError = '認証設定を確認してください。'; }
+} else if (authMode !== 'demo') authConfigurationError = '認証設定を確認してください。';
+let account = authMode === 'demo' ? localStorage.getItem('demoAccount') ?? 'staff' : '';
+const getToken = createTokenProvider(() => account, authMode === 'demo' ? undefined : async () => {
+    if (!firebaseSession) throw Error('AUTH_UNAVAILABLE');
+    return firebaseSession.token();
+});
 async function api(path: string, method = 'GET', body?: unknown) {
     const r = await fetch(`/api/v1${path}`, { method, headers: { Authorization: `Bearer ${await getToken()}`, ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: body instanceof FormData ? body : JSON.stringify(body) }) });
     const data = await r.json();
@@ -63,6 +74,8 @@ function Asset({ id, video = false, audio = false, startMs = 0, endMs, alt = '�
 function App() {
     const [path, setPath] = useState(location.pathname);
     const [uid, setUid] = useState(account);
+    const [role, setRole] = useState<'staff' | 'learner' | 'newcomer' | ''>(authMode === 'demo' ? (account === 'staff' ? 'staff' : account === 'newcomer' ? 'newcomer' : 'learner') : '');
+    const [authLoading, setAuthLoading] = useState(authMode === 'firebase');
     const [error, setError] = useState('');
     useEffect(() => {
         const f = () => {
@@ -71,6 +84,28 @@ function App() {
         };
         window.addEventListener('popstate', f);
         return () => window.removeEventListener('popstate', f);
+    }, []);
+    useEffect(() => {
+        if (authMode !== 'firebase' || !firebaseSession) { setAuthLoading(false); return; }
+        let active = true, sequence = 0;
+        const unsubscribe = firebaseSession.observe(user => {
+            const current = ++sequence;
+            account = ''; setUid(''); setRole(''); setError('');
+            if (!user) { setAuthLoading(false); return; }
+            setAuthLoading(true);
+            void (async () => {
+                try {
+                    const identity = await api('/identity');
+                    if (identity.uid !== user.uid || !['staff', 'learner', 'newcomer'].includes(identity.role)) throw Error('INVALID_IDENTITY');
+                    if (active && current === sequence) {
+                        account = user.uid; setUid(user.uid); setRole(identity.role);
+                        go(identity.role === 'staff' ? '/staff' : identity.role === 'newcomer' ? '/handover' : '/me');
+                    }
+                } catch (failure) { if (active && current === sequence) setError((failure as { code?: string }).code === 'AUTH_SERVICE_UNAVAILABLE' ? '認証サービスを利用できません。時間をおいて再度お試しください。' : 'アカウントの権限を確認できません。管理者に確認してください。'); }
+                finally { if (active && current === sequence) setAuthLoading(false); }
+            })();
+        });
+        return () => { active = false; unsubscribe(); };
     }, []);
     const action = async (fn: () => Promise<void>) => {
         setError('');
@@ -81,15 +116,23 @@ function App() {
             setError((e as Error).message);
         }
     };
+    if (authConfigurationError) return <main><p role="alert">{authConfigurationError}</p></main>;
+    if (authMode === 'firebase' && (!role || authLoading)) return <main>{authLoading ? <p role="status">認証を確認中です</p> : <FirebaseLogin error={error}/>}</main>;
     return <><header><a href="#" onClick={e => {
             e.preventDefault();
-            go(uid === 'staff' ? '/staff' : uid === 'newcomer' ? '/handover' : '/me');
-        }}>てじゅんのバトン</a><span>開発デモ · Fake生成</span><label>デモアカウント <select value={uid} onChange={e => {
-            account = e.target.value;
-            localStorage.setItem('demoAccount', account);
-            setUid(account);
-            go(account === 'staff' ? '/staff' : account === 'newcomer' ? '/handover' : '/me');
-        }}>{accounts.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></header><main key={uid}><p className="notice">架空プロフィールを使ったローカルデモです。生成候補は職員の原動画照合・承認が必要です。</p>{error && <div role="alert" className="error">{error}</div>}{uid === 'staff' ? <Staff path={path} action={action}/> : uid === 'newcomer' ? <Handover path={path} action={action}/> : <Learner uid={uid} path={path} action={action}/>}</main></>;
+            go(role === 'staff' ? '/staff' : role === 'newcomer' ? '/handover' : '/me');
+        }}>てじゅんのバトン</a>{authMode === 'demo' ? <><span>開発デモ · Fake生成</span><label>デモアカウント <select value={uid} onChange={e => {
+            account = e.target.value; localStorage.setItem('demoAccount', account); setUid(account);
+            const nextRole = account === 'staff' ? 'staff' : account === 'newcomer' ? 'newcomer' : 'learner'; setRole(nextRole);
+            go(nextRole === 'staff' ? '/staff' : nextRole === 'newcomer' ? '/handover' : '/me');
+        }}>{accounts.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></> : <button onClick={() => void firebaseSession?.signOut()}>ログアウト</button>}</header><main key={uid}><p className="notice">生成候補は職員の原動画照合・承認が必要です。</p>{error && <div role="alert" className="error">{error}</div>}{role === 'staff' ? <Staff path={path} action={action}/> : role === 'newcomer' ? <Handover path={path} action={action}/> : <Learner uid={uid} path={path} action={action}/>}</main></>;
+}
+function FirebaseLogin({ error }: { error: string }) {
+    const [email, setEmail] = useState(''), [password, setPassword] = useState(''), [failure, setFailure] = useState(''), [busy, setBusy] = useState(false);
+    return <section><h1>ログイン</h1>{(error || failure) && <p role="alert">{error || failure}</p>}<form onSubmit={e => {
+        e.preventDefault(); if (!firebaseSession || busy) return; setBusy(true); setFailure('');
+        void firebaseSession.signIn(email.trim(), password).then(() => setPassword('')).catch(() => { setFailure('ログインできませんでした。入力内容を確認してください。'); setPassword(''); }).finally(() => setBusy(false));
+    }}><label>メールアドレス<input type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)}/></label><label>パスワード<input type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)}/></label><button disabled={busy}>ログイン</button></form>{error && <button onClick={() => void firebaseSession?.signOut()}>別のアカウントでログイン</button>}</section>;
 }
 type Action = (fn: () => Promise<void>) => Promise<void>;
 function Staff({ path, action }: {
@@ -243,7 +286,7 @@ function Draft({ id, action }: {
             localStorage.removeItem(`approval:${id}`);
             if (draft.status === 'editing') void run(fetchLatest);
             else void action(load);
-        }}>{draft.status === 'editing' ? '最新値を取得' : '再取得'}</button></nav><h1>{manual ? '承認版のコピー' : 'AIの下書き（解釈）'}</h1>{manual && <p role="status">{source || 'コピー元の承認版を取得中です。'}</p>}<p>本人：{draft.learnerId === 'a' ? 'Aさん（9工程）' : 'Bさん（折るを細分化・11工程）'} / revision {draft.revision} / {draft.status}</p>{!manual && draft.status === 'generating' ? <p role="status">動画解析中です。3秒ごとに状態を確認しています。</p> : !manual && draft.status === 'failed' ? <section><p role="alert">生成に失敗しました。本人用の手順は作成されていません。</p>{error && <p role="alert">{error}</p>}<button disabled={busy} onClick={() => void retry()}>新しいジョブで再試行</button>{draft.sourceReleaseId && <button disabled={busy} onClick={() => go(`/staff/learners/${encodeURIComponent(draft.learnerId)}`)}>本人別の作業一覧で記録を選び直す</button>}</section> : draft.status === 'approved' ? <section><h2>承認済みです</h2><button onClick={() => go('/staff/handover')}>承認版を確認・本人へ割当</button></section> : <><p>{manual ? '承認版をコピーした手作業の下書きです。原動画と照合し、修正後にすべての確認を行ってから、新しい版として承認してください。元の承認版と実行中の手順は変わりません。' : 'Fake候補です。動画の動作・原音と候補を照合し、必要な修正と写真切り出しを行ってください。確認欄はすべて未確認から始まります。'}</p>{error && <p role="alert">{error}</p>}{latest && <section><h2>サーバーの最新値（入力は保持）</h2><p>revision {latest.revision} / {latest.status}</p><p>表示方法：{latest.displayMode} / 音声：{String(latest.audioGuidance)}</p><pre>{JSON.stringify({ editedSteps: latest.editedSteps, reviewChecks: latest.reviewChecks }, null, 2)}</pre></section>}<fieldset disabled={busy}><legend>この作業の提示設定</legend><label>表示方法<select value={displayMode} onChange={e => { setDisplayMode(e.target.value as typeof displayMode); setChecks(c => ({ ...c, presentationConfirmed: false })); }}><option value="photo_only">写真のみ</option><option value="photo_text">写真＋短文</option></select></label><label><input type="checkbox" checked={audioGuidance} onChange={e => { setAudioGuidance(e.target.checked); setChecks(c => ({ ...c, presentationConfirmed: false })); }}/>音声ガイドを希望する</label></fieldset>{draft.origin === 'improvement' && <ImprovementReview source={improvementSource} steps={steps} references={draft.referencedSupportInputs ?? []} selected={appliedRefs} onChange={setAppliedRefs} video={(assetId, start, end) => <Asset id={assetId} video startMs={start} endMs={end}/>} />}<p>本人に見せる短文・写真の代替テキスト・注意の修正は、次回のAI下書きに使われます。これらの欄に本人を特定できる情報を入れないでください。</p><fieldset disabled={busy}><legend>工程の編集と確認</legend><div className="workspace"><aside>{task?.videoAssetId && <Asset id={task.videoAssetId} video/>}{!manual && <><h2>AIの候補・確認が必要な点</h2>{draft.aiProposal?.reviewFlags.map((f: string) => <p key={f}>{f}</p>)}{draft.aiProposal?.steps.map((s: any) => <details key={s.stepId}><summary>{s.stepId}：{s.startMs}–{s.endMs} ms</summary><p>観察候補：{s.observationCandidate}</p><p>声の候補：{s.speechCandidate || '聞き取り未確認'}</p>{s.reviewFlags.map((f: string) => <p key={f}>{f}</p>)}</details>)}</>}</aside><div>{steps.map((s, i) => <section key={s.stepId}><h2>工程 {i + 1}</h2>{s.imageAssetId && <Asset id={s.imageAssetId}/>}<label>本人に見せる短文（40文字以内）<input maxLength={40} value={s.text} onChange={e => change(i, 'text', e.target.value)}/></label><label>写真の代替テキスト（200文字以内）<input maxLength={200} value={s.imageAltText ?? ''} onChange={e => change(i, 'imageAltText', e.target.value)}/></label><label>本人に見せる注意<input maxLength={200} value={s.visibleCaution} onChange={e => change(i, 'visibleCaution', e.target.value)}/></label><div className="times">{(['sourceStartMs', 'sourceEndMs', 'frameMs'] as const).map((key, j) => <label key={key}>{['開始ms', '終了ms', '写真ms'][j]}<input type="number" min={0} value={s[key]} onChange={e => change(i, key, Number(e.target.value))}/></label>)}</div><button disabled={busy} onClick={() => void action(async () => {
+        }}>{draft.status === 'editing' ? '最新値を取得' : '再取得'}</button></nav><h1>{manual ? '承認版のコピー' : 'AIの下書き（解釈）'}</h1>{manual && <p role="status">{source || 'コピー元の承認版を取得中です。'}</p>}<p>本人：{draft.learnerId === 'a' ? 'Aさん（9工程）' : draft.learnerId === 'b' ? 'Bさん（折るを細分化・11工程）' : '対象の本人'} / revision {draft.revision} / {draft.status}</p>{!manual && draft.status === 'generating' ? <p role="status">動画解析中です。3秒ごとに状態を確認しています。</p> : !manual && draft.status === 'failed' ? <section><p role="alert">生成に失敗しました。本人用の手順は作成されていません。</p>{error && <p role="alert">{error}</p>}<button disabled={busy} onClick={() => void retry()}>新しいジョブで再試行</button>{draft.sourceReleaseId && <button disabled={busy} onClick={() => go(`/staff/learners/${encodeURIComponent(draft.learnerId)}`)}>本人別の作業一覧で記録を選び直す</button>}</section> : draft.status === 'approved' ? <section><h2>承認済みです</h2><button onClick={() => go('/staff/handover')}>承認版を確認・本人へ割当</button></section> : <><p>{manual ? '承認版をコピーした手作業の下書きです。原動画と照合し、修正後にすべての確認を行ってから、新しい版として承認してください。元の承認版と実行中の手順は変わりません。' : 'Fake候補です。動画の動作・原音と候補を照合し、必要な修正と写真切り出しを行ってください。確認欄はすべて未確認から始まります。'}</p>{error && <p role="alert">{error}</p>}{latest && <section><h2>サーバーの最新値（入力は保持）</h2><p>revision {latest.revision} / {latest.status}</p><p>表示方法：{latest.displayMode} / 音声：{String(latest.audioGuidance)}</p><pre>{JSON.stringify({ editedSteps: latest.editedSteps, reviewChecks: latest.reviewChecks }, null, 2)}</pre></section>}<fieldset disabled={busy}><legend>この作業の提示設定</legend><label>表示方法<select value={displayMode} onChange={e => { setDisplayMode(e.target.value as typeof displayMode); setChecks(c => ({ ...c, presentationConfirmed: false })); }}><option value="photo_only">写真のみ</option><option value="photo_text">写真＋短文</option></select></label><label><input type="checkbox" checked={audioGuidance} onChange={e => { setAudioGuidance(e.target.checked); setChecks(c => ({ ...c, presentationConfirmed: false })); }}/>音声ガイドを希望する</label></fieldset>{draft.origin === 'improvement' && <ImprovementReview source={improvementSource} steps={steps} references={draft.referencedSupportInputs ?? []} selected={appliedRefs} onChange={setAppliedRefs} video={(assetId, start, end) => <Asset id={assetId} video startMs={start} endMs={end}/>} />}<p>本人に見せる短文・写真の代替テキスト・注意の修正は、次回のAI下書きに使われます。これらの欄に本人を特定できる情報を入れないでください。</p><fieldset disabled={busy}><legend>工程の編集と確認</legend><div className="workspace"><aside>{task?.videoAssetId && <Asset id={task.videoAssetId} video/>}{!manual && <><h2>AIの候補・確認が必要な点</h2>{draft.aiProposal?.reviewFlags.map((f: string) => <p key={f}>{f}</p>)}{draft.aiProposal?.steps.map((s: any) => <details key={s.stepId}><summary>{s.stepId}：{s.startMs}–{s.endMs} ms</summary><p>観察候補：{s.observationCandidate}</p><p>声の候補：{s.speechCandidate || '聞き取り未確認'}</p>{s.reviewFlags.map((f: string) => <p key={f}>{f}</p>)}</details>)}</>}</aside><div>{steps.map((s, i) => <section key={s.stepId}><h2>工程 {i + 1}</h2>{s.imageAssetId && <Asset id={s.imageAssetId}/>}<label>本人に見せる短文（40文字以内）<input maxLength={40} value={s.text} onChange={e => change(i, 'text', e.target.value)}/></label><label>写真の代替テキスト（200文字以内）<input maxLength={200} value={s.imageAltText ?? ''} onChange={e => change(i, 'imageAltText', e.target.value)}/></label><label>本人に見せる注意<input maxLength={200} value={s.visibleCaution} onChange={e => change(i, 'visibleCaution', e.target.value)}/></label><div className="times">{(['sourceStartMs', 'sourceEndMs', 'frameMs'] as const).map((key, j) => <label key={key}>{['開始ms', '終了ms', '写真ms'][j]}<input type="number" min={0} value={s[key]} onChange={e => change(i, key, Number(e.target.value))}/></label>)}</div><button disabled={busy} onClick={() => void action(async () => {
                     setBusy(true);
                     try {
                         const r = await api(`/drafts/${id}/frames`, 'POST', { frameMs: s.frameMs });

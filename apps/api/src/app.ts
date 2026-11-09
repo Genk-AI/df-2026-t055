@@ -9,7 +9,7 @@ import { supportResumeRequestSchema, supportResumeResponseSchema, supportRecordS
 import { draftCorrectionSchema, correctionsListResponseSchema } from '../../../packages/shared/src/generation.ts';
 import { workGuideListResponseSchema, workGuideRecordsResponseSchema } from '../../../packages/shared/src/work-guides.ts';
 import { MemoryRepository, seed, doc, id, now, type Repository, type Storage, type Auth, type Doc } from './adapters.ts';
-import { configuredAuth } from './firebase-auth.ts';
+import { configuredAuth, AuthServiceUnavailableError } from './firebase-auth.ts';
 import { configuredStorage } from './cloud-storage.ts';
 import { configuredRepository } from './firestore-repository.ts';
 import { configuredTts, type TtsAdapter } from './tts.ts';
@@ -176,6 +176,7 @@ export function createApp(options: {
         });
         res.json(workGuideRecordsResponseSchema.parse({ schemaVersion: '1', records: result }));
     });
+    api.get('/identity', (_req, res) => { const m = member(res); send(res, { uid: m.uid, role: m.role }); });
     // ルートは対象ごとにまとめる。新しいルートは対象のまとまりへ追加し、競合時は両側のルートを残す。
     api.post('/tasks', async (req, res) => {
         staff(res);
@@ -964,8 +965,8 @@ export function createApp(options: {
         send(res, { status: 'processed' });
     });
     app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-        const status = err instanceof HttpError ? err.status : typeof err.status === 'number' ? err.status : err instanceof z.ZodError || err.type === 'entity.parse.failed' ? 422 : 500;
-        res.status(status).json({ error: { code: status === 500 ? 'INTERNAL_ERROR' : err.code ?? 'INVALID_INPUT', message: status === 500 ? '処理に失敗しました' : '操作を確認してください', requestId: res.locals.requestId } });
+        const status = err instanceof AuthServiceUnavailableError ? 503 : err instanceof HttpError ? err.status : typeof err.status === 'number' ? err.status : err instanceof z.ZodError || err.type === 'entity.parse.failed' ? 422 : 500;
+        res.status(status).json({ error: { code: err instanceof AuthServiceUnavailableError ? 'AUTH_SERVICE_UNAVAILABLE' : status === 500 ? 'INTERNAL_ERROR' : err.code ?? 'INVALID_INPUT', message: err instanceof AuthServiceUnavailableError ? '認証サービスを利用できません。時間をおいて再度お試しください' : status === 500 ? '処理に失敗しました' : '操作を確認してください', requestId: res.locals.requestId } });
     });
     return {
         app, db, storage, limit

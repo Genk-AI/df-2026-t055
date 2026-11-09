@@ -198,7 +198,7 @@ Cloud Storageは`source/{orgId}/{taskId}/...`、`draft/{orgId}/{draftId}/...`、
 
 ### 共通契約
 
-ベースは`/api/v1`、JSONはcamelCase、`schemaVersion: "1"`。Firebase AuthenticationのIDトークンをBearerで送り、APIで検証してmembersのroleを取得する。本人アカウントはlearnerIdにひも付ける。URLのIDを変えたアクセスも権限検査する。401は認証失敗、403は権限不足、404は対象なし、409は状態・revision競合、422は入力不正。エラー形は`{error:{code,message,requestId}}`とし、内部例外や生成原文を返さない。
+ベースは`/api/v1`、JSONはcamelCase、`schemaVersion: "1"`。Firebase AuthenticationのIDトークンをBearerで送り、APIで検証してmembersのroleを取得する。本人アカウントはlearnerIdにひも付ける。URLのIDを変えたアクセスも権限検査する。401は認証失敗、403は権限不足、404は対象なし、409は状態・revision競合、422は入力不正、503 `AUTH_SERVICE_UNAVAILABLE` は認証サービスの障害や検証不能。エラー形は`{error:{code,message,requestId}}`とし、内部例外や生成原文を返さない。
 
 | メソッド・パス | 利用者 | 入力 → 出力・処理 |
 | --- | --- | --- |

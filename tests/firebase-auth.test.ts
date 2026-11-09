@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { Agent } from 'node:https';
+import { initializeApp, deleteApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
 import { DemoAuth, MemoryRepository, seed, doc } from '../apps/api/src/adapters.ts';
 import { FirebaseAuth, configuredAuth, type FirebaseTokenClient } from '../apps/api/src/firebase-auth.ts';
 import { createApp } from '../apps/api/src/app.ts';
@@ -10,7 +13,7 @@ const expiry = Math.floor(Date.now() / 1000) + 3600;
 class FakeTokens implements FirebaseTokenClient {
     async verifyIdToken(token: string, checkRevoked: true) {
         assert.equal(checkRevoked, true);
-        if (token === 'invalid') throw Error('PRIVATE_TOKEN');
+        if (token === 'invalid') throw Object.assign(Error('Decoding Firebase ID token failed. PRIVATE_TOKEN'), { code: 'auth/argument-error' });
         return { uid: token, exp: token === 'expired' ? 1 : expiry };
     }
 }
@@ -149,4 +152,46 @@ test('member CLI uses an explicit repository module and never prints account arg
             assert.doesNotMatch(error.stdout + error.stderr, /fake-cli-uid|missing/); return true;
         });
     } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('Firebase ADC binding is selected only with an explicit project and org', () => {
+    const { db } = setup();
+    assert.ok(configuredAuth(db, { AUTH_BACKEND: 'firebase', FIREBASE_PROJECT_ID: 't055-test-project', FIRESTORE_ORG_ID: 'demo' }) instanceof FirebaseAuth);
+    assert.throws(() => configuredAuth(db, { AUTH_BACKEND: 'firebase', FIREBASE_PROJECT_ID: 't055-test-project' }), /FIREBASE_ORG_ID_REQUIRED/);
+});
+
+test('identity endpoint returns only the verified UID and role', async () => {
+    const { db, auth } = setup();
+    const app = createApp({ db, auth }).app;
+    const get = (token: string) => app.fetch(new Request('http://localhost/api/v1/identity', { headers: { authorization: `Bearer ${token}` } }));
+    const staff = await get('staff'); assert.equal(staff.status, 200);
+    assert.deepEqual(await staff.json(), { schemaVersion: '1', uid: 'staff', role: 'staff' });
+    assert.equal((await get('invalid')).status, 401);
+    const learner = await get('learner-a');
+    assert.deepEqual(await learner.json(), { schemaVersion: '1', uid: 'learner-a', role: 'learner' });
+});
+
+
+test('Firebase SDK distinguishes invalid tokens from unavailable verification without exposing secrets', async () => {
+    class OfflineAgent extends Agent { createConnection(): never { throw Error('PRIVATE_NETWORK_DETAIL'); } }
+    const firebaseApp = initializeApp({ projectId: 't055-offline-test', httpAgent: new OfflineAgent() }, 't055-offline-test');
+    const { db } = setup();
+    const logs: string[] = [];
+    const previous = console.error;
+    console.error = (...args: unknown[]) => { logs.push(args.join(' ')); };
+    try {
+        const part = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
+        const time = Math.floor(Date.now() / 1000);
+        const token = `${part({ alg: 'RS256', kid: 'test' })}.${part({ iss: 'https://securetoken.google.com/t055-offline-test', aud: 't055-offline-test', sub: 'private-uid', iat: time, exp: time + 3600, auth_time: time })}.AA`;
+        const auth = new FirebaseAuth(db, getAuth(firebaseApp), 'demo');
+        const app = createApp({ db, auth }).app;
+        const request = (value: string) => app.fetch(new Request('http://localhost/api/v1/tasks', { headers: { authorization: `Bearer ${value}` } }));
+        assert.equal((await request('not-a-jwt')).status, 401);
+        const response = await request(token);
+        assert.equal(response.status, 503);
+        const body = await response.text();
+        assert.equal(JSON.parse(body).error.code, 'AUTH_SERVICE_UNAVAILABLE');
+        assert.doesNotMatch(body + logs.join(' '), /PRIVATE_NETWORK_DETAIL|private-uid|Bearer/);
+        assert.equal(logs.length, 1);
+    } finally { console.error = previous; await deleteApp(firebaseApp); }
 });
