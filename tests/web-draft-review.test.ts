@@ -75,6 +75,8 @@ test('review helpers list missing steps and flags, default mode, and validate se
 });
 test('labelled edits PATCH presentation and alt, server checks replace local checks, re-confirm then approve',async()=>{
     const h=harness();let tree=await open(h);
+    assert.match(text(tree), /修正は、次回のAI下書きに使われます/);
+    assert.match(text(tree), /本人を特定できる情報を入れないでください/);
     assert.equal(input(tree,'表示方法').props.value,'photo_only'); assert.equal(input(tree,'音声').props.checked,true);
     for(const n of nodes(tree).filter(n=>['input','textarea','select'].includes(n.type))) assert.ok(nodes(tree).some(l=>l.type==='label'&&nodes(l).includes(n)));
     change(tree,'表示方法','photo_text');tree=h.render();change(tree,'音声',false);tree=h.render();change(tree,'写真の代替','新しい手元');tree=h.render();

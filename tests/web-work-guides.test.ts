@@ -15,7 +15,7 @@ export async function flush(){for(const f of effects)f();await new Promise(r=>se
 const hookUrl = 'data:text/javascript;base64,' + Buffer.from(hooksSource).toString('base64');
 const hooks = await import(hookUrl);
 let source = await readFile(new URL('../apps/web/src/staff-work-guides.tsx', import.meta.url), 'utf8');
-source = source.replace("'./staff-improvement-request.tsx'", JSON.stringify('data:text/javascript,export const StaffImprovementRequest=()=>null')).replace("'react'", JSON.stringify(hookUrl)).replace("'../../../packages/shared/src/work-guides.ts'", JSON.stringify(new URL('../packages/shared/src/work-guides.ts', import.meta.url).href));
+source = source.replace("'./staff-correction-history.tsx'", JSON.stringify('data:text/javascript,export const StaffCorrectionHistory=()=>null')).replace("'./staff-improvement-request.tsx'", JSON.stringify('data:text/javascript,export const StaffImprovementRequest=()=>null')).replace("'react'", JSON.stringify(hookUrl)).replace("'../../../packages/shared/src/work-guides.ts'", JSON.stringify(new URL('../packages/shared/src/work-guides.ts', import.meta.url).href));
 const compiled = ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
 const { StaffWorkGuides } = await import('data:text/javascript;base64,' + Buffer.from(compiled).toString('base64'));
 function nodes(tree: any): any[] { if (Array.isArray(tree)) return tree.flatMap(nodes); if (!React.isValidElement(tree)) return []; return [tree, ...nodes((tree.props as any).children)]; }
@@ -28,7 +28,7 @@ test('生成中でも次回版・未反映数を示し、承認版へ移動で�
     const render = () => { hooks.begin(); return StaffWorkGuides({ learnerId: 'a', api, go: (path: string) => { destination = path; } }); };
     let tree = render(); await hooks.flush(); tree = render();
     assert.match(text(tree), /タオル/); assert.match(text(tree), /版 2/); assert.match(text(tree), /3件/); assert.match(text(tree), /生成中/);
-    nodes(tree).find(node => node.type === 'button').props.onClick();
+    nodes(tree).find(node => node.type === 'button' && text(node) === '次回版を見る').props.onClick();
     assert.equal(destination, '/staff/handover/releases/r%2F1');
     hooks.reset();
 });
