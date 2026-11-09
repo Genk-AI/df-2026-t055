@@ -125,3 +125,24 @@ for (const reason of ['revision', 'review', 'contract']) test(`承認拒否で�
     assert.equal(h.db.all('assets').filter(a => a.visibility === 'approved').length, 0);
     assert.equal(h.db.get('drafts', 'draft')!.status, 'editing');
 });
+
+test('improvement approval accepts only selected record revisions and preserves its source release', async () => {
+    const h = await harness();
+    h.db.put('releases', doc('demo', { id: 'source', taskId: 'task', learnerId: 'a', version: 1, appliedSupportRecordRefs: [] }));
+    h.db.put('generationJobs', doc('demo', { id: 'job', taskId: 'task', draftId: 'draft', inputSnapshot: { sourceReleaseId: 'source', supportInputs: [{ recordId: 'r', revision: 2, summary: '要約' }] } }));
+    h.draft.jobId = 'job'; h.draft.sourceReleaseId = 'source';
+    h.draft.appliedSupportRecordRefs = [{ recordId: 'r', revision: 1 }];
+    h.db.put('drafts', h.draft);
+    const rejected = await h.approve();
+    assert.equal(rejected.status, 422);
+    assert.equal((await rejected.json()).error.code, 'INVALID_SUPPORT_RECORD_REFS');
+    h.draft.appliedSupportRecordRefs = [{ recordId: 'r', revision: 2 }];
+    h.db.put('drafts', h.draft);
+    const accepted = await h.approve();
+    assert.equal(accepted.status, 200);
+    const result = await accepted.json();
+    const release = h.db.get('releases', result.releaseId)!;
+    assert.equal(release.sourceReleaseId, 'source');
+    assert.deepEqual(release.appliedSupportRecordRefs, [{ recordId: 'r', revision: 2 }]);
+    assert.equal(h.db.get('releases', 'source')?.version, 1);
+});

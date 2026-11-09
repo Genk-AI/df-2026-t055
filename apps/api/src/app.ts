@@ -224,11 +224,12 @@ export function createApp(options: {
                 }
                 inputSnapshot = improvementGuideInputSnapshotSchema.parse({ taskId: t.id, learnerId, sourceReleaseId: source.id,
                     sourceReleaseVersion: source.version, supportInputs: improvement.supportInputs, correctionRefs: [],
+                    preferences: { sentenceLength: learner.preferences.sentenceLength ?? 40, splitHints: learner.preferences.splitHints ?? '', audioGuidance: false },
                     displayMode: learner.preferences.displayMode ?? 'photo_text', confirmedGuidance: learner.confirmedGuidance ?? [] });
             }
             const d = doc(t.orgId, {
                 taskId: t.id, learnerId, displayMode: learner.preferences.displayMode ?? 'photo_text', audioGuidance: learner.preferences.audioGuidance ?? false, revision: 0, status: 'generating', editedSteps: [], reviewChecks: { presentationConfirmed: false, flagResolution: '', steps: {} }, updatedBy: member(res).uid,
-                ...(improvement ? { sourceReleaseId: improvement.sourceReleaseId, appliedSupportRecordRefs: [] } : {})
+                ...(improvement ? { sourceReleaseId: improvement.sourceReleaseId, origin: 'improvement', appliedSupportRecordRefs: [] } : {})
             });
             const j = doc(t.orgId, {
                 taskId: t.id, draftId: d.id, kind: 'guide', status: 'queued', attempt: 0, budgetUsed: 1, modelId: options.modelId ?? 'fake-fixture', promptVersion: '1',
@@ -395,10 +396,13 @@ export function createApp(options: {
             const source = await get('releases', d.sourceReleaseId, res);
             if (source.taskId !== d.taskId || source.learnerId !== d.learnerId)
                 fail(422, 'INVALID_SOURCE_RELEASE');
-            if ((d.appliedSupportRecordRefs ?? []).some((ref: any) => !(source.appliedSupportRecordRefs ?? []).some((inherited: any) => inherited.recordId === ref.recordId && inherited.revision === ref.revision)))
+            const job = d.jobId ? await get('generationJobs', d.jobId, res) : undefined;
+            if (job && (job.draftId !== d.id || job.taskId !== d.taskId || job.inputSnapshot?.sourceReleaseId !== source.id)) fail(422, 'INVALID_IMPROVEMENT_JOB');
+            const allowed = job ? job.inputSnapshot.supportInputs : source.appliedSupportRecordRefs ?? [];
+            if ((d.appliedSupportRecordRefs ?? []).some((ref: any) => !allowed.some((input: any) => input.recordId === ref.recordId && input.revision === ref.revision)))
                 fail(422, 'INVALID_SUPPORT_RECORD_REFS');
         }
-        else if ((d.aiProposal.reviewFlags.length || d.aiProposal.steps.some((s: any) => s.reviewFlags.length)) && !d.reviewChecks.flagResolution.trim())
+        if (d.aiProposal && (d.aiProposal.reviewFlags.length || d.aiProposal.steps.some((s: any) => s.reviewFlags.length)) && !d.reviewChecks.flagResolution.trim())
             fail(422, 'FLAGS_UNRESOLVED');
         const releaseId = id();
         const assets: Doc[] = [];

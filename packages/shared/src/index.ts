@@ -112,8 +112,8 @@ const draftBase = {
 };
 export const aiDraftSchema = z.object({ ...draftBase,
     status: z.enum(['generating', 'editing', 'approved', 'failed']),
-    jobId: identifier, aiProposal: proposalSchema.optional()
-}).strict();
+    jobId: identifier, sourceReleaseId: identifier.optional(), origin: z.literal('improvement').optional(), aiProposal: proposalSchema.optional()
+}).strict().refine(d => !!d.sourceReleaseId === (d.origin === 'improvement'));
 export const manualDraftSchema = z.object({ ...draftBase,
     status: z.enum(['editing', 'approved']), sourceReleaseId: identifier
 }).strict();

@@ -2,14 +2,13 @@ import { doc, now, type Repository, type Storage, type Doc } from '../../api/src
 import { media } from '../../api/src/media.ts';
 import type { EditedStep } from '../../../packages/shared/src/index.ts';
 import { validateProposal, type VideoModel } from './model.ts';
+import { improvementGuideInputSnapshotSchema } from '../../../packages/shared/src/generation.ts';
 export function createWorker(db: Repository, storage: Storage, model: VideoModel, globalLimit: number) {
     return async function run(jobId: string) {
         let token = '';
         let job = await db.get('generationJobs', jobId);
         if (!job)
             throw Error('JOB_NOT_FOUND');
-        // Improvement jobs stay queued until their dedicated worker is installed.
-        if (job.inputSnapshot?.sourceReleaseId) throw Error('IMPROVEMENT_WORKER_NOT_CONFIGURED');
         if (['succeeded', 'failed'].includes(job.status))
             return;
         const claimed = await db.transaction(async () => {
@@ -35,12 +34,25 @@ export function createWorker(db: Repository, storage: Storage, model: VideoModel
         let errorCode = 'GENERATION_FAILED';
         try {
             const d = (await db.get('drafts', job.draftId))!, t = (await db.get('tasks', job.taskId))!, v = (await db.get('assets', t.videoAssetId))!, l = (await db.get('learners', d.learnerId))!;
+            let improvement: import('./model.ts').ModelInput['improvement'];
+            let displayMode = d.displayMode ?? 'photo_text';
+            let confirmedGuidance = l.confirmedGuidance ?? [];
+            let preferences = { sentenceLength: l.preferences.sentenceLength, splitHints: l.preferences.splitHints ?? '', audioGuidance: false };
+            if (job.inputSnapshot?.sourceReleaseId) {
+                const snapshot = improvementGuideInputSnapshotSchema.parse(job.inputSnapshot);
+                const source = await db.get('releases', snapshot.sourceReleaseId);
+                if (!source || source.orgId !== d.orgId || source.taskId !== d.taskId || source.learnerId !== d.learnerId || source.version !== snapshot.sourceReleaseVersion || snapshot.taskId !== d.taskId || snapshot.learnerId !== d.learnerId || d.sourceReleaseId !== source.id) throw Error('INVALID_IMPROVEMENT_SOURCE');
+                improvement = { sourceSteps: source.learnerSteps.map((s: any) => ({ order: s.order, text: s.text, imageAltText: s.imageAltText, visibleCaution: s.visibleCaution })), supportSummaries: snapshot.supportInputs.map(input => input.summary) };
+                displayMode = snapshot.displayMode;
+                confirmedGuidance = snapshot.confirmedGuidance;
+                preferences = snapshot.preferences;
+            }
             const controller = new AbortController();
             let timeout: ReturnType<typeof setTimeout> | undefined;
             errorCode = 'MODEL_CALL_FAILED';
             const output = await Promise.race([model.generate({
                     // 未確認の希望は省略できる（正本第2節）ため、生成への入力は空の分割ヒントで補う。
-                    videoUri: v.objectPath, title: t.title, completionCriteria: '帯紙の向き、袋口、テープを見本と比較する', preferences: { sentenceLength: l.preferences.sentenceLength, splitHints: l.preferences.splitHints ?? '', audioGuidance: false }, displayMode: d.displayMode ?? 'photo_text', confirmedGuidance: l.confirmedGuidance ?? [], durationMs: v.durationMs
+                    videoUri: v.objectPath, title: t.title, completionCriteria: '帯紙の向き、袋口、テープを見本と比較する', preferences, displayMode, confirmedGuidance, durationMs: v.durationMs, ...(improvement ? { improvement } : {})
                 }, controller.signal), new Promise<never>((_, reject) => {
                     timeout = setTimeout(() => {
                         errorCode = 'MODEL_TIMEOUT';

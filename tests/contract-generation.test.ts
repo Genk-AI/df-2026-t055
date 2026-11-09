@@ -70,6 +70,8 @@ test('support IDs, revisions, summaries and request keys enforce boundaries in r
     for (const clientRequestId of ['', 'x'.repeat(101)]) rejects(g.improvementGenerationRequestSchema, { ...request, clientRequestId });
     g.improvementGenerationRequestSchema.parse({ ...request, clientRequestId: 'x'.repeat(100) });
     const snapshot = fixture('improvement-snapshot-valid');
+    rejects(g.improvementGuideInputSnapshotSchema, { ...snapshot, preferences: undefined });
+    rejects(g.improvementGuideInputSnapshotSchema, { ...snapshot, preferences: { ...snapshot.preferences, sentenceLength: 41 } });
     for (const sourceReleaseVersion of [0, -1, 1.5]) rejects(g.improvementGuideInputSnapshotSchema, { ...snapshot, sourceReleaseVersion });
     const ref = snapshot.correctionRefs[0];
     for (const correctionRefs of [[ref, ref], [{ ...ref, correctionId: '' }], [{ ...ref, draftRevision: -1 }], [{ ...ref, draftRevision: 0.5 }], Array.from({ length: 21 }, (_, i) => ({ ...ref, correctionId: `c${i}` }))])

@@ -19,5 +19,10 @@
   "displayMode": "photo_text",
   "confirmedGuidance": [
     "目印を具体的に示す"
-  ]
+  ],
+  "preferences": {
+    "sentenceLength": 24,
+    "splitHints": "目印ごとに分ける",
+    "audioGuidance": false
+  }
 }
