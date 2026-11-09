@@ -337,6 +337,8 @@ function Learner({ uid, path, action }: {
     const sessionId = path.match(/\/me\/sessions\/([^/]+)/)?.[1];
     const latestSupport = useRef({ sessionId: '', session: -1, requestId: '', support: -1 });
     const [assignments, setAssignments] = useState<any[]>([]), [session, setSession] = useState<LearnerDisplaySession>(), [safetyTick, setSafetyTick] = useState(0), [message, setMessage] = useState(''), [busy, setBusy] = useState(false), [homeHalted, setHomeHalted] = useState(false);
+    const sessionRef = useRef(session);
+    sessionRef.current = session;
     // 開始リクエスト中に押された「やめる／手伝って」を、応答後の遷移判定で使うために保持する
     const pendingHomeSafety = useRef<'help' | 'stop' | null>(null);
     const key = sessionId ? safetyKey(uid, sessionId) : '';
@@ -418,20 +420,22 @@ function Learner({ uid, path, action }: {
         let active = true;
         const apply = (state: { sessionId: string; releaseId: string; status: LearnerSessionDTO['status']; stepIndex: number; revision: number; support?: { requestId: string; revision: number; status: string } }) => {
             if (!active || state.sessionId !== sessionId || readSafety(localStorage, key).stopped) return;
+            const previous = sessionRef.current;
+            if (!previous || previous.releaseId !== state.releaseId || state.revision < previous.revision) return;
             const latest = latestSupport.current;
-            if (latest.sessionId === sessionId && (state.revision < latest.session || (state.support?.requestId === latest.requestId && state.support && state.support.revision < latest.support))) return;
+            if (latest.sessionId === sessionId && (state.revision < latest.session ||
+                (state.revision === latest.session && latest.requestId && state.support?.requestId !== latest.requestId) ||
+                (state.support?.requestId === latest.requestId && state.support && state.support.revision < latest.support))) return;
             latestSupport.current = { sessionId, session: state.revision, requestId: state.support?.requestId ?? (state.revision === latest.session ? latest.requestId : ''), support: state.support?.revision ?? (state.revision === latest.session ? latest.support : -1) };
+            const pending = readSafety(localStorage, key);
+            if (state.status === 'active' && !state.support && !pending.pending.length) clearWaiting(localStorage, key);
+            const updated = { ...previous, status: state.status, stepIndex: state.stepIndex, revision: state.revision };
+            sessionRef.current = updated;
             setSession(previous => {
-                if (!previous || previous.releaseId !== state.releaseId || state.revision < previous.revision) return previous;
-                // Release the local wait when the server shows the session active with no open
-                // support request: the help that caused the wait has been answered and the session
-                // resumed. Anchor on the request state, not on a revision increase seen after
-                // load, so a reload after resume also releases the wait.
-                const pending = readSafety(localStorage, key);
-                if (state.status === 'active' && !state.support && !pending.pending.length) clearWaiting(localStorage, key);
+                if (!previous || previous.releaseId !== state.releaseId || state.revision < previous.revision || readSafety(localStorage, key).stopped) return previous;
                 return { ...previous, status: state.status, stepIndex: state.stepIndex, revision: state.revision };
             });
-            if (state.support) setMessage(state.support.status === 'open' ? '職員をよんでいます' : state.support.status === 'acknowledged' ? '対応が終わりました' : '担当の職員が決まりました');
+            if (state.support && !pending.pending.length) setMessage(state.support.status === 'open' ? '職員をよんでいます' : state.support.status === 'acknowledged' ? '対応が終わりました' : state.support.status === 'in_progress' ? '職員が対応しています' : '担当の職員が決まりました');
         };
         const poll = async () => { try { apply(await api(`/me/sessions/${sessionId}`)); } catch { /* Keep waiting during disconnects. */ } };
         const timer = setInterval(() => void poll(), 3000);
