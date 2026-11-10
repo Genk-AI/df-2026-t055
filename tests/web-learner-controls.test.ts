@@ -231,7 +231,7 @@ test('読み上げボタンの漢字にルビを付け、読みは支援技術�
 
 test('CSS contract: native focus, non-color disabled cue, narrow and 200% text wrapping', async () => {
   const css = await readFile(new URL('../apps/web/src/style.css', import.meta.url), 'utf8');
-  assert.match(css, /button:focus-visible[^}]*outline:4px solid #e3a830;outline-offset:3px/);
+  assert.match(css, /button:focus-visible[^}]*outline:4px solid #9a4a00;outline-offset:3px/);
   assert.match(css, /\.learner button:disabled\{[^}]*border:3px dashed currentColor/);
   assert.match(
     css,
@@ -245,4 +245,39 @@ test('CSS contract: native focus, non-color disabled cue, narrow and 200% text w
   assert.match(css, /\.learner\{padding-bottom:16em\}\.learner \.safety\{position:fixed;bottom:0/);
   // Structural checks only: em icons scale with 200% text; no fixed height,
   // one flexible column and normal wrapping. Real layout/keyboard/AT remain unverified.
+});
+
+test('CSS contract: UI colors meet 4.5:1 contrast and old low-contrast values are gone', async () => {
+  const css = await readFile(new URL('../apps/web/src/style.css', import.meta.url), 'utf8');
+  const luminance = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map((i) => {
+      const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const ratio = (fg: string, bg: string) => {
+    const [a, b] = [luminance(fg), luminance(bg)].sort((x, y) => y - x);
+    return (a + 0.05) / (b + 0.05);
+  };
+  const pairs: Array<[string, string[]]> = [
+    ['#3f6c67', ['#ffffff', '#f2f7f5', '#e4eeea']],
+    ['#4f6965', ['#ffffff', '#e8efec']],
+    ['#9a4a00', ['#ffffff', '#f2f7f5', '#e4eeea']],
+    ['#ffd27a', ['#174e4b']],
+    ['#7a5c0c', ['#e4eeea', '#ffe9a3']],
+  ];
+  for (const [fg, bgs] of pairs) {
+    assert.ok(css.includes(fg), `style.css must contain ${fg}`);
+    for (const bg of bgs) {
+      const r = ratio(fg, bg);
+      assert.ok(r >= 4.5, `${fg} on ${bg} is ${r.toFixed(2)}:1, below 4.5:1`);
+    }
+  }
+  assert.ok(!css.includes('#e3a830'));
+  assert.ok(!/(input|textarea|select)[^{]*\{[^}]*#8ea6a3/.test(css));
+  assert.ok(!css.includes('#8ea6a3'));
+  assert.ok(!css.includes('#568580'));
+  assert.ok(!css.includes('#b0882b'));
+  assert.ok(!css.includes('opacity:.45'));
 });
