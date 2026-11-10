@@ -2,6 +2,7 @@
 
 ## 2026-11-10
 
+- 支援記録の音声入力（#76）の実装に合わせて、[機能仕様](features/speech-input.md)・[API契約](contracts/api.md)・[Speech-to-Text V2の設定と確認](deploy/speech-to-text.md)・[ADR-0002](adr/0002-speech-input-transcription.md)を更新した。文字起こしはweb-api経由の同期Recognizeで行い、音声を保存せず、確認・訂正した文字だけを既存の記録保存APIで保存する。上限・タイムアウト・エラーコード・環境変数を実装の確定値に合わせ、実GCP・実ブラウザ・実請求・本人評価が未実施であることを明記した。監査は[実装監査記録](implementation-audits/20261110-1818-56341d9.md)。
 - [ADR一覧](adr/index.md)、テンプレート、運用方針、採用済みの文書再編を記録するADR-0001を追加した。ADRの `status` もOKFの3値に統一し、採否は本文に記録する。
 - 通常のコミット前に `docs:check` を実行するLefthookジョブを追加した。文書以外の変更でも作業ツリー全体を検査し、文書の整合性エラーでコミットを中止する。
 - 文書構造の参照版を `okf@v0.2` と明記し、ルート索引に `okf_version: "0.2"` を宣言した。指定元・移転先の仕様をコミットSHAで固定し、基本適合条件・任意機能・独自拡張・専用検査の違いを[照合記録](implementation-audits/20261110-1533-06c89d0.md)へ残した。

@@ -16,12 +16,21 @@ export async function flush(){for(const f of effects)f();await new Promise(r=>se
 const hookUrl = 'data:text/javascript;base64,' + Buffer.from(sourceHooks).toString('base64');
 const hooks = await import(hookUrl);
 let source = await readFile(new URL('../apps/web/src/support-record.tsx', import.meta.url), 'utf8');
+// support-record.tsx は speech-recorder.ts を import するが、data URL からは相対 import を
+// 解決できないため、MediaRecorder を使わない最小スタブへ差し替える。
+const recorderStub =
+  'data:text/javascript,' +
+  encodeURIComponent(
+    'export async function startRecording(){throw Object.assign(Error("RECORDING_UNSUPPORTED"),{code:"RECORDING_UNSUPPORTED"});}' +
+      'export async function encodeWav(){throw Object.assign(Error("DECODE_FAILED"),{code:"DECODE_FAILED"});}',
+  );
 source = source
   .replace("'react'", JSON.stringify(hookUrl))
   .replace(
     "'../../../packages/shared/src/support.ts'",
     JSON.stringify(new URL('../packages/shared/src/support.ts', import.meta.url).href),
-  );
+  )
+  .replace("'./speech-recorder.ts'", JSON.stringify(recorderStub));
 const compiled = ts.transpileModule(source, {
   compilerOptions: {
     jsx: ts.JsxEmit.React,

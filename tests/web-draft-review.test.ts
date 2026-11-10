@@ -41,6 +41,8 @@ import {releaseCopyResponseSchema,improvementRetryInputSchema,generationJobStatu
 const ImprovementReview=()=>null;
 export const StaffSupport=()=>null; const subscribeStaffSupport=()=>()=>{}; const StaffLearners=()=>null;
 const api=(...args)=>globalThis.draftApi(...args); const go=(path)=>globalThis.draftGo?.(path); const Asset=()=>null;
+// Staff は音声入力の文字起こしを StaffSupport へ渡す。この画面の検査には不要なので空の実装で置き換える。
+const transcribeAudio=async()=>({transcript:''});
 export ${source}`;
 const compiled = ts.transpileModule(source, {
   compilerOptions: {

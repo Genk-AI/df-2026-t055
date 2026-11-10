@@ -37,6 +37,7 @@ import {
   supportClaimResponseSchema,
   supportRequestListResponseSchema,
   supportRequestStatusQuerySchema,
+  supportTranscriptionResponseSchema,
   staffIdentitySchema,
   staffSupportSessionSchema,
   supportSessionEventResponseSchema,
@@ -64,6 +65,12 @@ import { configuredAuth, AuthServiceUnavailableError } from './firebase-auth.ts'
 import { configuredStorage } from './cloud-storage.ts';
 import { configuredRepository } from './firestore-repository.ts';
 import { configuredTts, type TtsAdapter } from './tts.ts';
+import {
+  configuredSpeech,
+  maxSpeechAudioBytes,
+  normalizeSpeechAudio,
+  type SpeechTranscriber,
+} from './speech.ts';
 import { media } from './media.ts';
 import type { GenerationQueue } from './cloud-tasks.ts';
 import { generationEnabled } from './generation-control.ts';
@@ -88,6 +95,20 @@ export class HttpError extends Error {
 export function fail(status: number, code: string): never {
   throw new HttpError(status, code);
 }
+// Transcription failures are mapped by these allowlists so no other message can leak.
+const audioCodes = new Set([
+  'INVALID_AUDIO',
+  'AUDIO_TOO_SHORT',
+  'AUDIO_TOO_LONG',
+  'AUDIO_TOO_LARGE',
+]);
+const speechCodes = new Set([
+  'SPEECH_REQUEST_FAILED',
+  'SPEECH_NO_TRANSCRIPT',
+  'SPEECH_TRANSCRIPT_TOO_LONG',
+  'SPEECH_NOT_CONFIGURED',
+  'SPEECH_INVALID_CONFIG',
+]);
 function learnerProfileDetail(d: Doc) {
   return learnerProfileDetailSchema.parse({
     schemaVersion: '1',
@@ -124,6 +145,7 @@ function savedRelease(d: Doc) {
 export function createApp(
   options: {
     tts?: TtsAdapter;
+    speech?: SpeechTranscriber;
     db?: Repository;
     storage?: Storage;
     auth?: Auth;
@@ -140,6 +162,7 @@ export function createApp(
   if (!options.db && db instanceof MemoryRepository) seed(db);
   const storage = options.storage ?? configuredStorage();
   const tts = options.tts ?? configuredTts();
+  const speech = options.speech ?? configuredSpeech(process.env);
   const auth = configuredAuth(db, process.env, undefined, options.auth);
   const app = http();
   const notifications = supportWebSocket(db, auth);
@@ -177,7 +200,7 @@ export function createApp(
           origin !== `http://${req.headers.host}`
         )
           fail(403, 'ORIGIN');
-        if (!req.is('application/json') && !req.is('multipart/form-data'))
+        if (!req.is('application/json') && !req.is('multipart/form-data') && !req.is('audio/wav'))
           fail(422, 'CONTENT_TYPE');
       }
       next();
@@ -1621,6 +1644,32 @@ export function createApp(
       return response;
     });
     res.json(result);
+  });
+  // Speech is transcribed for the staff member to review; nothing is saved, approved or resumed here.
+  api.post('/support-requests/:id/record/transcriptions', async (req, res) => {
+    staff(res);
+    const q = await get('supportRequests', req.params.id, res);
+    if (q.kind !== 'help' || !['in_progress', 'acknowledged'].includes(q.status))
+      fail(409, 'INVALID_STATE');
+    // This endpoint only accepts raw WAV; JSON is rejected here even though the shared
+    // /api/v1 guard also allows it for other routes.
+    if (!req.is('audio/wav')) fail(422, 'CONTENT_TYPE');
+    const audio = req.rawBody;
+    if (!audio?.length) fail(422, 'INVALID_AUDIO');
+    if (audio.length > maxSpeechAudioBytes) fail(422, 'AUDIO_TOO_LARGE');
+    let wav: Buffer, transcript: string;
+    try {
+      wav = await normalizeSpeechAudio(audio);
+      transcript = await speech.transcribe(wav);
+    } catch (e: any) {
+      // Only known codes may reach the client: an unexpected message could carry
+      // ffmpeg stderr, a temporary path or provider detail.
+      const code = typeof e?.message === 'string' ? e.message : '';
+      if (audioCodes.has(code)) fail(422, code);
+      if (speechCodes.has(code)) fail(502, code);
+      fail(502, 'SPEECH_REQUEST_FAILED');
+    }
+    res.json(supportTranscriptionResponseSchema.parse({ schemaVersion: '1', transcript }));
   });
   api.get('/handover/releases', async (req, res) => {
     role(res, 'staff', 'newcomer');

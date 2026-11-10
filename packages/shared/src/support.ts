@@ -150,6 +150,10 @@ export type SupportRecord = z.infer<typeof supportRecordSchema>;
 export const supportRecordSaveRequestSchema = z
   .object({ expectedRevision: nonnegative, ...recordText })
   .strict();
+export const supportTranscriptionResponseSchema = z
+  .object({ schemaVersion: version, transcript: z.string().max(2000) })
+  .strict();
+export type SupportTranscriptionResponse = z.infer<typeof supportTranscriptionResponseSchema>;
 export const supportWsAuthSchema = z.object({ type: z.literal('auth'), idToken: id }).strict();
 export const staffSupportNotificationSchema = z.discriminatedUnion('type', [
   z

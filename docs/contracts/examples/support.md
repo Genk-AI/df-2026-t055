@@ -22,6 +22,7 @@ Issue #26の共有契約と架空の入出力例を示す。要件は[支援フ�
 | POST /api/v1/support-requests/{requestId}/resume | [resume要求](../../../packages/shared/fixtures/support/operation-resume-request.json) → [resume応答](../../../packages/shared/fixtures/support/operation-resume-response.json) |
 | GET /api/v1/support-requests/{requestId}/record | [record DTO](../../../packages/shared/fixtures/support/record-valid.json) を直接返す。未作成は404 |
 | PUT /api/v1/support-requests/{requestId}/record | [保存要求](../../../packages/shared/fixtures/support/record-save-request.json) → [record DTO](../../../packages/shared/fixtures/support/record-valid.json)。ラッパーなし |
+| POST /api/v1/support-requests/{requestId}/record/transcriptions | 音声（`audio/wav`、16kHz・16bit・モノラル、5秒以上60秒以下・5MB以下）→ [文字起こし応答](../../../packages/shared/fixtures/support/transcription-response-valid.json)。保存しない。`{transcript}` だけを返し、記録への反映は職員の確認後に行う |
 | GET /api/v1/me/sessions/{sessionId} | 承認済み固定版の手順・提示設定とセッション状態を返す。support と状態の部分は [本人向け状態例](../../../packages/shared/fixtures/support/learner-session-support.json) を参照 |
 | POST /api/v1/me/sessions/{sessionId}/events | 既存 eventSchema の `{clientEventId,expectedRevision,type}` を維持。応答例は下記 |
 

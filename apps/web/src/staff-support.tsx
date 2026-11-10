@@ -7,18 +7,21 @@ import {
   type SupportRequest,
 } from '../../../packages/shared/src/support.ts';
 import { learnerProfileListResponseSchema } from '../../../packages/shared/src/learner-profile.ts';
-import { SupportRecordForm } from './support-record.tsx';
+import { SupportRecordForm, type Transcribe } from './support-record.tsx';
 
 type Api = (path: string, method?: string, body?: unknown) => Promise<any>;
 export function StaffSupport({
   api,
   subscribe,
+  transcribe,
 }: {
   api: Api;
   subscribe: (
     receive: (value: unknown) => void,
     status: (connected: boolean) => void,
   ) => () => void;
+  /** 音声入力の文字起こし。未指定の画面では音声入力を提供せず、文字入力だけを使う。 */
+  transcribe?: Transcribe;
 }) {
   const [uid, setUid] = useState(''),
     [learnerNames, setLearnerNames] = useState<Map<string, string>>(new Map()),
@@ -295,6 +298,7 @@ export function StaffSupport({
             }
             open={!!recordOpen[requestId]}
             api={api}
+            transcribe={transcribe}
             onClose={() => {
               setRecordOpen((old) => ({ ...old, [requestId]: false }));
               (recordButtons.current[requestId] ?? heading.current)?.focus();

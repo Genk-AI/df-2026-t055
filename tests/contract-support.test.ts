@@ -28,6 +28,7 @@ const valid: Record<string, z.ZodType> = {
   'operation-resume-response': c.supportResumeResponseSchema,
   'record-save-request': c.supportRecordSaveRequestSchema,
   'record-valid': c.supportRecordSchema,
+  'transcription-response-valid': c.supportTranscriptionResponseSchema,
   'learner-session-support': c.learnerSupportSessionStateSchema,
   'ws-staff-snapshot': c.staffSupportNotificationSchema,
   'ws-staff-update': c.staffSupportNotificationSchema,

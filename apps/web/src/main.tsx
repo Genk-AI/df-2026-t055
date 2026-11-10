@@ -103,6 +103,27 @@ async function api(path: string, method = 'GET', body?: unknown) {
     );
   return data;
 }
+// 音声は JSON にできないため、文字起こしだけ専用の送信処理を使う。
+// 音声は送信するだけで保存せず、返ってきた文字は職員の確認後にだけ欄へ入れる。
+async function transcribeAudio(path: string, blob: Blob): Promise<{ transcript: string }> {
+  const r = await fetch(`/api/v1${path}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${await getToken()}`,
+      'Content-Type': 'audio/wav',
+    },
+    body: blob,
+  });
+  const data = await r.json();
+  if (!r.ok)
+    throw Object.assign(
+      Error(
+        `${data.error?.code ?? r.status}：${r.status === 409 ? '状態が変わりました。再取得してください' : (data.error?.message ?? '通信を確認してください')}`,
+      ),
+      { status: r.status, code: data.error?.code },
+    );
+  return { transcript: typeof data.transcript === 'string' ? data.transcript : '' };
+}
 function go(path: string) {
   history.pushState({}, '', path);
   window.dispatchEvent(new PopStateEvent('popstate'));
@@ -478,7 +499,7 @@ function Staff({ path, action }: { path: string; action: Action }) {
         <button onClick={() => go('/staff/handover')}>承認版を確認・割当</button>
       </nav>
       {path === '/staff/support' ? (
-        <StaffSupport api={api} subscribe={subscribeStaffSupport} />
+        <StaffSupport api={api} subscribe={subscribeStaffSupport} transcribe={transcribeAudio} />
       ) : path === '/staff/learners' || path.startsWith('/staff/learners/') ? (
         <StaffLearners key={path} path={path} api={api} go={go} />
       ) : path.startsWith('/staff/handover') ? (

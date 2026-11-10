@@ -7,4 +7,5 @@
 - [生成受付・費用・保管期限](cost-and-retention.md)
 - [Firebase認証の接続](firebase-auth.md)
 - [Firestoreの支援通知](firestore-notifications.md)
+- [Speech-to-Text V2 の設定と確認](speech-to-text.md)
 - [Vertex Gemini TTS の設定と確認](vertex-tts.md)

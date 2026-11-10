@@ -16,7 +16,8 @@ if (process.env.NODE_ENV === 'production') {
     process.env.STORAGE_BACKEND !== 'cloud' ||
     process.env.QUEUE_BACKEND !== 'cloud' ||
     process.env.MODEL_PROVIDER !== 'vertex' ||
-    process.env.TTS_PROVIDER !== 'vertex'
+    process.env.TTS_PROVIDER !== 'vertex' ||
+    process.env.SPEECH_PROVIDER !== 'google'
   )
     throw Error('PRODUCTION_CLOUD_ADAPTERS_REQUIRED');
   const origin = new URL(process.env.WEB_ORIGIN ?? '');
