@@ -57,6 +57,6 @@ status: draft
 
 ## 確認状況
 
-記録日：2026-11-10。記録担当：Codex。確認対象：`56341d9bbb3acbc4c3eb6b1e8752657009a97d86` と #76 の未コミット実装差分。自動テストは `tests/speech-transcription.test.ts`・`tests/api-support-transcription.test.ts`・`tests/web-support-record-speech.test.ts` の39件で、transport・MediaRecorder・AudioContextをスタブした範囲を確認した。全テスト448件・型検査・Lintは成功。
+記録日：2026-11-10。記録担当：Codex。確認対象：`02aa270dff0ad673805d0cc93281cd77d42cb701`（#76 の実装コミット）。自動テストは `tests/speech-transcription.test.ts`・`tests/api-support-transcription.test.ts`・`tests/web-support-record-speech.test.ts` の39件で、transport・MediaRecorder・AudioContextをスタブした範囲を確認した。全テスト448件・型検査・Lintは成功。
 
 未確認：実GCPのSpeech-to-Text V2への疎通・実認証・実リクエスト、実ブラウザ・実マイクでの録音、実端末でのマイク許可拒否・通信断・タイムアウト・キャンセル、実請求額とSKUの実適用、`chirp_3` 名指しの単価、本人・現場による認識精度と訂正負担の評価、実APIと実ブラウザの結合確認。本ADRへの独立レビューは未実施。方式の採用と、実装完了・実環境での動作・本人評価は別に扱う。

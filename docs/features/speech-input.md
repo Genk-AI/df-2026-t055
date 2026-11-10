@@ -8,7 +8,7 @@ feature_id: speech-input
 scope: core
 implementation: present
 verification: automated
-assessed_commit: 56341d9bbb3acbc4c3eb6b1e8752657009a97d86
+assessed_commit: 02aa270dff0ad673805d0cc93281cd77d42cb701
 owner: unassigned
 issues:
   - https://github.com/Genk-AI/df-2026-t055/issues/17
@@ -25,7 +25,7 @@ tests:
   - tests/api-support-transcription.test.ts
   - tests/web-support-record-speech.test.ts
 evidence:
-  - docs/implementation-audits/20261110-1818-56341d9.md
+  - docs/implementation-audits/20261110-1818-02aa270.md
 gaps:
   - 実GCPのSpeech-to-Text V2への疎通・実認証・実リクエストは未実施。transportを差し替えた単体テストだけを確認した。
   - 実ブラウザ・実マイクでの録音は未実施。MediaRecorderとAudioContextはスタブ検証のみで、SafariがWebMをデコードできない場合の実挙動は未確認。
